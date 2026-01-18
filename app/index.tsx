@@ -4,7 +4,7 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useSessionStore } from '@/store/sessions';
-import { MoonStar, Play, Square, Sun } from 'lucide-react-native';
+import { MoonStar, Play, Square, Sun, FolderOpen } from 'lucide-react-native';
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
 import {
@@ -164,6 +164,8 @@ export default function TimerScreen() {
     const {
         isRunning,
         elapsedSeconds,
+        currentTopic,
+        currentFolderName,
         startTimer,
         stopTimer,
         tick,
@@ -187,6 +189,13 @@ export default function TimerScreen() {
         loadSessions();
         loadStats();
     }, []);
+
+    // Sync local topic with store's currentTopic
+    React.useEffect(() => {
+        if (currentTopic && isRunning) {
+            setTopic(currentTopic);
+        }
+    }, [currentTopic, isRunning]);
 
     const handlePlayPress = async () => {
         if (isRunning) {
@@ -255,9 +264,19 @@ export default function TimerScreen() {
                         />
                     </View>
                     {isRunning && (
-                        <Text variant="muted" style={styles.focusingText}>
-                            Focusing on: <Text style={{ color: colors.primary }}>{topic}</Text>
-                        </Text>
+                        <View style={styles.focusingContainer}>
+                            <Text variant="muted" style={styles.focusingText}>
+                                Focusing on: <Text style={{ color: colors.primary }}>{topic}</Text>
+                            </Text>
+                            {currentFolderName && (
+                                <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
+                                    <FolderOpen size={12} color={colors.primary} />
+                                    <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
+                                        {currentFolderName}
+                                    </Text>
+                                </View>
+                            )}
+                        </View>
                     )}
                 </View>
             </KeyboardAvoidingView>
@@ -356,8 +375,24 @@ const styles = StyleSheet.create({
         elevation: 8,
     },
     focusingText: {
-        marginTop: 12,
-        textAlign: 'center',
         fontSize: 14,
+        textAlign: 'center',
+    },
+    focusingContainer: {
+        marginTop: 12,
+        alignItems: 'center',
+        gap: 6,
+    },
+    folderBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 10,
+        paddingVertical: 4,
+        borderRadius: 12,
+    },
+    folderBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
     },
 });

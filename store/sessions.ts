@@ -6,6 +6,7 @@ import {
     getTodaySessions,
     getTotalFocusTime,
     getCurrentStreak,
+    getFolderById,
     type Session,
 } from '@/lib/database';
 
@@ -16,6 +17,8 @@ interface TimerState {
     elapsedSeconds: number;
     currentSessionId: number | null;
     currentTopic: string;
+    currentFolderId: number | null;
+    currentFolderName: string;
 
     // Session data
     sessions: Session[];
@@ -24,7 +27,7 @@ interface TimerState {
     currentStreak: number;
 
     // Timer actions
-    startTimer: (topic: string) => Promise<void>;
+    startTimer: (topic: string, folderId?: number) => Promise<void>;
     pauseTimer: () => void;
     resumeTimer: () => void;
     stopTimer: () => Promise<void>;
@@ -43,18 +46,27 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     elapsedSeconds: 0,
     currentSessionId: null,
     currentTopic: '',
+    currentFolderId: null,
+    currentFolderName: '',
     sessions: [],
     todaySessions: [],
     totalFocusTime: 0,
     currentStreak: 0,
 
-    startTimer: async (topic: string) => {
-        const sessionId = await createSession(topic);
+    startTimer: async (topic: string, folderId?: number) => {
+        const sessionId = await createSession(topic, undefined, folderId);
+        let folderName = '';
+        if (folderId) {
+            const folder = await getFolderById(folderId);
+            folderName = folder?.name || '';
+        }
         set({
             isRunning: true,
             isPaused: false,
             currentSessionId: sessionId,
             currentTopic: topic,
+            currentFolderId: folderId || null,
+            currentFolderName: folderName,
             elapsedSeconds: 0,
         });
     },
@@ -77,6 +89,8 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             isPaused: false,
             currentSessionId: null,
             currentTopic: '',
+            currentFolderId: null,
+            currentFolderName: '',
             elapsedSeconds: 0,
         });
         // Refresh data

@@ -2,7 +2,7 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { usePathname, useRouter } from 'expo-router';
-import { BarChart3, Calendar, Clock } from 'lucide-react-native';
+import { BarChart3, FolderOpen, Clock } from 'lucide-react-native';
 import * as React from 'react';
 import { Pressable, View, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
@@ -15,7 +15,7 @@ import Animated, {
 
 const TABS = [
     { name: 'index', label: 'Timer', icon: Clock, href: '/' },
-    { name: 'calendar', label: 'Calendar', icon: Calendar, href: '/calendar' },
+    { name: 'calendar', label: 'Folders', icon: FolderOpen, href: '/calendar' },
     { name: 'reports', label: 'Reports', icon: BarChart3, href: '/reports' },
 ] as const;
 
