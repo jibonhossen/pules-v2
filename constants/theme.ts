@@ -1,53 +1,73 @@
-/**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://reactnativeunistyles.vercel.app), etc.
- */
+import { DarkTheme, DefaultTheme, type Theme } from '@react-navigation/native';
 
-import { Platform } from 'react-native';
-
-const tintColorLight = '#0a7ea4';
-const tintColorDark = '#fff';
-
-export const Colors = {
+// Pulse Theme Colors - Emerald/Teal palette for a calm focus experience
+export const PULSE_COLORS = {
   light: {
-    text: '#11181C',
-    background: '#fff',
-    tint: tintColorLight,
-    icon: '#687076',
-    tabIconDefault: '#687076',
-    tabIconSelected: tintColorLight,
+    background: '#fafafa',
+    foreground: '#18181b',
+    card: '#ffffff',
+    cardForeground: '#18181b',
+    primary: '#14b8a6',      // Teal-500
+    primaryForeground: '#ffffff',
+    secondary: '#0d9488',    // Teal-600
+    secondaryForeground: '#ffffff',
+    muted: '#e4e4e7',        // Zinc-200
+    mutedForeground: '#71717a',
+    accent: '#2dd4bf',       // Teal-400
+    accentForeground: '#18181b',
+    border: '#e4e4e7',
+    input: '#e4e4e7',
+    destructive: '#ef4444',
   },
   dark: {
-    text: '#ECEDEE',
-    background: '#151718',
-    tint: tintColorDark,
-    icon: '#9BA1A6',
-    tabIconDefault: '#9BA1A6',
-    tabIconSelected: tintColorDark,
+    background: '#09090b',   // Zinc-950
+    foreground: '#fafafa',   // Zinc-50
+    card: '#18181b',         // Zinc-900
+    cardForeground: '#fafafa',
+    primary: '#2dd4bf',      // Teal-400
+    primaryForeground: '#18181b',
+    secondary: '#14b8a6',    // Teal-500
+    secondaryForeground: '#ffffff',
+    muted: '#27272a',        // Zinc-800
+    mutedForeground: '#a1a1aa',
+    accent: '#5eead4',       // Teal-300
+    accentForeground: '#18181b',
+    border: '#27272a',
+    input: '#27272a',
+    destructive: '#dc2626',
   },
 };
 
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
+// Heatmap color scale - Teal gradient
+export const HEATMAP_COLORS = {
+  none: '#27272a',       // Zinc-800 - 0 hours
+  low: '#134e4a',        // Teal-900 - <1 hour
+  medium: '#0d9488',     // Teal-600 - 1-2 hours
+  high: '#2dd4bf',       // Teal-400 - 2-4 hours
+  max: '#5eead4',        // Teal-300 - 4+ hours
+};
+
+export const NAV_THEME: Record<'light' | 'dark', Theme> = {
+  light: {
+    ...DefaultTheme,
+    colors: {
+      background: PULSE_COLORS.light.background,
+      border: PULSE_COLORS.light.border,
+      card: PULSE_COLORS.light.card,
+      notification: PULSE_COLORS.light.destructive,
+      primary: PULSE_COLORS.light.primary,
+      text: PULSE_COLORS.light.foreground,
+    },
   },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
+  dark: {
+    ...DarkTheme,
+    colors: {
+      background: PULSE_COLORS.dark.background,
+      border: PULSE_COLORS.dark.border,
+      card: PULSE_COLORS.dark.card,
+      notification: PULSE_COLORS.dark.destructive,
+      primary: PULSE_COLORS.dark.primary,
+      text: PULSE_COLORS.dark.foreground,
+    },
   },
-  web: {
-    sans: "system-ui, -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif",
-    serif: "Georgia, 'Times New Roman', serif",
-    rounded: "'SF Pro Rounded', 'Hiragino Maru Gothic ProN', Meiryo, 'MS PGothic', sans-serif",
-    mono: "SFMono-Regular, Menlo, Monaco, Consolas, 'Liberation Mono', 'Courier New', monospace",
-  },
-});
+};
