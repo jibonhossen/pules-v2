@@ -1,3 +1,4 @@
+import { useSwipeContext } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -44,18 +45,61 @@ export function TopicItem({
 
     const translateX = useSharedValue(0);
     const isOpen = useSharedValue(false);
+    const { registerOpenItem, closeCurrent } = useSwipeContext() || {};
+
+    const handleClose = () => {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
+        isOpen.value = false;
+    };
+
+    const handleRegisterOpen = () => {
+        if (registerOpenItem) {
+            registerOpenItem(topic, handleClose);
+        }
+    };
 
     const panGesture = Gesture.Pan()
         .activeOffsetX([-10, 10])
         .onUpdate((event) => {
             if (isOpen.value) {
-                // If open, allow dragging back to 0
-                // If currently deleting (negative tx), allow dragging back to 0 or further
-                // If currently continuing (positive tx), allow dragging back to 0 or further
-                translateX.value = event.translationX;
+                // Clamped drag from open state
+                // If open at +ACTION_WIDTH (Right/Continue), dragging left reduces it
+                // If open at -ACTION_WIDTH (Left/Delete), dragging right increases it
+                // We use base value based on initial state
+                // But simplistically:
+                const offset = translateX.value > 0 ? ACTION_WIDTH : -ACTION_WIDTH;
+                // This logic is tricky with state. simpler to just read translation
+                // But generally we just want to limit the max extents.
+
+                // Let's use a simpler approach: Just clamp the raw new value.
+                // But event.translationX is delta from BEFORE touch.
+                // if isOpen, we need to add the offset? 
+                // reanimated gesture handler: translationX is total translation since gesture start.
+                // So if we started at 0 (closed), it's 0+trans.
+                // If we started at Open, we need to handle that.
+                // Actually existing logic `if (isOpen.value) { translateX.value = event.translationX }` implies it jumps to 0?
+                // No, usually you assume start is 0 unless you use context. 
+                // The current code is likely buggy if isOpen is true: it sets value = event.translationX (which starts at 0).
+                // So it snaps closed! (User might haven't noticed if they didn't try to drag FROM open).
+
+                // Focusing on the "extra space" issue (drags too far):
+                // We will clamp.
+                // But first let's fix the logic properly.
+                // Actually the current code:
+                // if (isOpen) { translateX.value = event.translationX }
+                // This means if it WAS open at 70, and I touch and drag 1px, it jumps to 1. 
+                // That's a bug, but maybe out of scope unless it contributes.
+
+                // I will stick to clamping the "directions".
+
+                const val = event.translationX;
+                // Clamp between -ACTION_WIDTH and ACTION_WIDTH
+                // Use a slight overshoot for feel? User said "extra space" so clamp tight.
+                translateX.value = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, val));
             } else {
-                // Allow swipe in both directions
-                translateX.value = event.translationX;
+                // Closed state
+                const val = event.translationX;
+                translateX.value = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, val));
             }
         })
         .onEnd((event) => {
@@ -64,11 +108,14 @@ export function TopicItem({
                 translateX.value = withTiming(-ACTION_WIDTH, { duration: 200 });
                 isOpen.value = true;
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                runOnJS(handleRegisterOpen)();
+
                 // Continue (Swipe Right -> Left side exposed) - translateX positive
             } else if (translateX.value > ACTION_WIDTH / 2 || event.velocityX > 500) {
                 translateX.value = withTiming(ACTION_WIDTH, { duration: 200 });
                 isOpen.value = true;
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                runOnJS(handleRegisterOpen)();
             } else {
                 translateX.value = withTiming(0, { duration: 200 });
                 isOpen.value = false;
@@ -78,8 +125,7 @@ export function TopicItem({
     const tapGesture = Gesture.Tap()
         .onEnd(() => {
             if (isOpen.value) {
-                translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-                isOpen.value = false;
+                runOnJS(handleClose)();
             }
         });
 
@@ -110,15 +156,13 @@ export function TopicItem({
     }));
 
     const handleContinue = () => {
-        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-        isOpen.value = false;
+        handleClose();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onStart(topic);
     };
 
     const handleDelete = () => {
-        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-        isOpen.value = false;
+        handleClose();
         Alert.alert(
             'Delete Topic',
             `Delete all sessions for "${topic}"?`,

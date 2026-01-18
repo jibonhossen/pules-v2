@@ -154,9 +154,12 @@ function PlayButton({
     );
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export default function TimerScreen() {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
+    const insets = useSafeAreaInsets();
 
     const [viewMode, setViewMode] = React.useState<ViewMode>('focus');
     const [topic, setTopic] = React.useState('');
@@ -217,7 +220,13 @@ export default function TimerScreen() {
         <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
             <KeyboardAvoidingView
                 behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={[styles.container, { backgroundColor: colors.background }]}
+                style={[
+                    styles.container,
+                    {
+                        backgroundColor: colors.background,
+                        paddingTop: insets.top,
+                    }
+                ]}
             >
                 {/* Header */}
                 <View style={styles.header}>

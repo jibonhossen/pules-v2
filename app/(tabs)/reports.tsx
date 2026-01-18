@@ -10,6 +10,7 @@ import { formatDuration } from '@/lib/utils';
 import { Clock, Flame, Target } from 'lucide-react-native';
 import * as React from 'react';
 import { RefreshControl, ScrollView, View, StyleSheet } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function ReportsScreen() {
     const { colorScheme } = useColorScheme();
@@ -17,6 +18,7 @@ export default function ReportsScreen() {
     const { totalFocusTime, currentStreak, loadStats } = useSessionStore();
     const [dailyData, setDailyData] = React.useState<Map<string, number>>(new Map());
     const [refreshing, setRefreshing] = React.useState(false);
+    const insets = useSafeAreaInsets();
 
     const loadData = React.useCallback(async () => {
         await loadStats();
@@ -40,7 +42,13 @@ export default function ReportsScreen() {
 
     return (
         <ScrollView
-            style={[styles.container, { backgroundColor: colors.background }]}
+            style={[
+                styles.container,
+                {
+                    backgroundColor: colors.background,
+                    marginTop: insets.top,
+                }
+            ]}
             contentContainerStyle={styles.contentContainer}
             refreshControl={
                 <RefreshControl

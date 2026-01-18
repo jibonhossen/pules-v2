@@ -19,45 +19,51 @@ export interface Session {
     duration_seconds: number;
 }
 
-let db: SQLite.SQLiteDatabase | null = null;
+let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
 export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-    if (db) return db;
-
-    db = await SQLite.openDatabaseAsync('pulse.db');
-
-    // Create folders table
-    await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS folders (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      name TEXT NOT NULL,
-      color TEXT DEFAULT '#14b8a6',
-      icon TEXT DEFAULT 'folder',
-      created_at TEXT NOT NULL
-    );
-  `);
-
-    // Create sessions table
-    await db.execAsync(`
-    CREATE TABLE IF NOT EXISTS sessions (
-      id INTEGER PRIMARY KEY AUTOINCREMENT,
-      topic TEXT NOT NULL,
-      tags TEXT,
-      folder_id INTEGER REFERENCES folders(id),
-      start_time TEXT NOT NULL,
-      end_time TEXT,
-      duration_seconds INTEGER DEFAULT 0
-    );
-  `);
-
-    // Try to add folder_id column if it doesn't exist (for existing databases)
-    try {
-        await db.execAsync(`ALTER TABLE sessions ADD COLUMN folder_id INTEGER REFERENCES folders(id);`);
-    } catch (e) {
-        // Column already exists, ignore
+    if (dbPromise) {
+        return dbPromise;
     }
 
-    return db;
+    dbPromise = (async () => {
+        const db = await SQLite.openDatabaseAsync('pulse.db');
+
+        // Create folders table
+        await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS folders (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          name TEXT NOT NULL,
+          color TEXT DEFAULT '#14b8a6',
+          icon TEXT DEFAULT 'folder',
+          created_at TEXT NOT NULL
+        );
+      `);
+
+        // Create sessions table
+        await db.execAsync(`
+        CREATE TABLE IF NOT EXISTS sessions (
+          id INTEGER PRIMARY KEY AUTOINCREMENT,
+          topic TEXT NOT NULL,
+          tags TEXT,
+          folder_id INTEGER REFERENCES folders(id),
+          start_time TEXT NOT NULL,
+          end_time TEXT,
+          duration_seconds INTEGER DEFAULT 0
+        );
+      `);
+
+        // Try to add folder_id column if it doesn't exist (for existing databases)
+        try {
+            await db.execAsync(`ALTER TABLE sessions ADD COLUMN folder_id INTEGER REFERENCES folders(id);`);
+        } catch (e) {
+            // Column already exists, ignore
+        }
+
+        return db;
+    })();
+
+    return dbPromise;
 }
 
 // Hook to initialize database

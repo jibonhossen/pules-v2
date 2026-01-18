@@ -1,4 +1,5 @@
 import { FolderCard, CreateFolderModal, AddTopicModal, SelectFolderModal, TopicItem } from '@/components/folders';
+import { SwipeProvider } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -28,6 +29,7 @@ import {
     StyleSheet,
     Alert,
 } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 interface TopicData {
     topic: string;
@@ -176,119 +178,139 @@ export default function FoldersScreen() {
         }
     };
 
+    const insets = useSafeAreaInsets();
+
     return (
-        <View style={[styles.container, { backgroundColor: colors.background }]}>
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.foreground }]}>Folders</Text>
-                <Pressable
-                    onPress={handleCreateFolder}
-                    style={[styles.addButton, { backgroundColor: colors.primary }]}
-                >
-                    <Plus size={22} color="#fff" />
-                </Pressable>
-            </View>
 
-            <ScrollView
-                style={styles.scrollView}
-                contentContainerStyle={styles.scrollContent}
-                refreshControl={
-                    <RefreshControl
-                        refreshing={refreshing}
-                        onRefresh={onRefresh}
-                        tintColor={colors.primary}
-                    />
+        <SwipeProvider>
+            <View style={[
+                styles.container,
+                {
+                    backgroundColor: colors.background,
+                    paddingTop: insets.top,
                 }
-            >
-                {/* Folders */}
-                {folders.length === 0 && unfolderedTopics.length === 0 ? (
-                    <View style={styles.emptyState}>
-                        <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}20` }]}>
-                            <FolderOpen size={48} color={colors.primary} />
-                        </View>
-                        <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
-                            No folders yet
-                        </Text>
-                        <Text variant="muted" style={styles.emptySubtitle}>
-                            Create a folder to organize your focus topics
-                        </Text>
-                        <Pressable
-                            onPress={handleCreateFolder}
-                            style={[styles.emptyButton, { backgroundColor: colors.primary }]}
-                        >
-                            <Plus size={18} color="#fff" />
-                            <Text style={styles.emptyButtonText}>Create Folder</Text>
-                        </Pressable>
-                    </View>
-                ) : (
-                    <>
-                        {folders.map((folder) => (
-                            <FolderCard
-                                key={folder.id}
-                                folder={folder}
-                                topics={folder.topics}
-                                totalTime={folder.totalTime}
-                                onEdit={handleEditFolder}
-                                onDelete={handleDeleteFolder}
-                                onAnalytics={handleFolderAnalytics}
-                                onAddTopic={handleAddTopic}
-                                onStartTopic={(topic, folderId) => handleStartTopic(topic, folderId)}
-                                onTopicAnalytics={handleTopicAnalytics}
-                                onDeleteTopic={handleDeleteTopic}
-                            />
-                        ))}
+            ]}>
+                {/* Header */}
+                <View style={styles.header}>
+                    <Text style={[styles.title, { color: colors.foreground }]}>Folders</Text>
+                    <Pressable
+                        onPress={handleCreateFolder}
+                        style={[styles.addButton, { backgroundColor: colors.primary }]}
+                    >
+                        <Plus size={22} color="#fff" />
+                    </Pressable>
+                </View>
 
-                        {/* Unfoldered topics */}
-                        {unfolderedTopics.length > 0 && (
-                            <View style={styles.unfolderedSection}>
-                                <Text variant="muted" style={styles.sectionTitle}>
-                                    Unorganized Topics
-                                </Text>
-                                <View style={{ gap: 8 }}>
-                                    {unfolderedTopics.map((topic) => (
-                                        <TopicItem
-                                            key={topic.topic}
-                                            topic={topic.topic}
-                                            totalTime={topic.totalTime}
-                                            sessionCount={topic.sessionCount}
-                                            lastSession={topic.lastSession}
-                                            onStart={handleStartTopic}
-                                            onAnalytics={handleTopicAnalytics}
-                                            onDelete={handleDeleteTopic}
-                                            onMove={handleUnorganizedTopicPress}
-                                        />
-                                    ))}
-                                </View>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
+                    onScrollBeginDrag={() => {
+                        // We can't access context here easily without hook.
+                        // But TopicItem/FolderCard could listen to scroll?
+                        // Actually, ScrollView interaction naturally intercepts?
+                        // Let's rely on `exclusive` swipe for "other topic" touches.
+                        // For empty space touches, the user might expect it to close.
+                    }}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            tintColor={colors.primary}
+                        />
+                    }
+                >
+                    {/* Folders */}
+                    {folders.length === 0 && unfolderedTopics.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}20` }]}>
+                                <FolderOpen size={48} color={colors.primary} />
                             </View>
-                        )}
-                    </>
-                )}
-            </ScrollView>
+                            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                                No folders yet
+                            </Text>
+                            <Text variant="muted" style={styles.emptySubtitle}>
+                                Create a folder to organize your focus topics
+                            </Text>
+                            <Pressable
+                                onPress={handleCreateFolder}
+                                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+                            >
+                                <Plus size={18} color="#fff" />
+                                <Text style={styles.emptyButtonText}>Create Folder</Text>
+                            </Pressable>
+                        </View>
+                    ) : (
+                        <>
+                            {folders.map((folder) => (
+                                <FolderCard
+                                    key={folder.id}
+                                    folder={folder}
+                                    topics={folder.topics}
+                                    totalTime={folder.totalTime}
+                                    onEdit={handleEditFolder}
+                                    onDelete={handleDeleteFolder}
+                                    onAnalytics={handleFolderAnalytics}
+                                    onAddTopic={handleAddTopic}
+                                    onStartTopic={(topic, folderId) => handleStartTopic(topic, folderId)}
+                                    onTopicAnalytics={handleTopicAnalytics}
+                                    onDeleteTopic={handleDeleteTopic}
+                                />
+                            ))}
 
-            <CreateFolderModal
-                visible={modalVisible}
-                folder={editingFolder}
-                onClose={() => setModalVisible(false)}
-                onSave={handleSaveFolder}
-            />
+                            {/* Unfoldered topics */}
+                            {unfolderedTopics.length > 0 && (
+                                <View style={styles.unfolderedSection}>
+                                    <Text variant="muted" style={styles.sectionTitle}>
+                                        Unorganized Topics
+                                    </Text>
+                                    <View style={{ gap: 8 }}>
+                                        {unfolderedTopics.map((topic) => (
+                                            <TopicItem
+                                                key={topic.topic}
+                                                topic={topic.topic}
+                                                totalTime={topic.totalTime}
+                                                sessionCount={topic.sessionCount}
+                                                lastSession={topic.lastSession}
+                                                onStart={handleStartTopic}
+                                                onAnalytics={handleTopicAnalytics}
+                                                onDelete={handleDeleteTopic}
+                                                onMove={handleUnorganizedTopicPress}
+                                            />
+                                        ))}
+                                    </View>
+                                </View>
+                            )}
+                        </>
+                    )}
+                </ScrollView>
 
-            <AddTopicModal
-                visible={addTopicModalVisible}
-                folderName={selectedFolderForTopic?.name || ''}
-                folderColor={selectedFolderForTopic?.color || colors.primary}
-                onClose={() => setAddTopicModalVisible(false)}
-                onSave={handleSaveNewTopic}
-            />
+                <CreateFolderModal
+                    visible={modalVisible}
+                    folder={editingFolder}
+                    onClose={() => setModalVisible(false)}
+                    onSave={handleSaveFolder}
+                />
 
-            <SelectFolderModal
-                visible={moveTopicModalVisible}
-                folders={folders}
-                topic={topicToMove}
-                onClose={() => setMoveTopicModalVisible(false)}
-                onSelect={handleMoveTopic}
-            />
-        </View>
+                <AddTopicModal
+                    visible={addTopicModalVisible}
+                    folderName={selectedFolderForTopic?.name || ''}
+                    folderColor={selectedFolderForTopic?.color || colors.primary}
+                    onClose={() => setAddTopicModalVisible(false)}
+                    onSave={handleSaveNewTopic}
+                />
+
+                <SelectFolderModal
+                    visible={moveTopicModalVisible}
+                    folders={folders}
+                    topic={topicToMove}
+                    onClose={() => setMoveTopicModalVisible(false)}
+                    onSelect={handleMoveTopic}
+                />
+            </View>
+        </SwipeProvider>
     );
+
 }
 
 const styles = StyleSheet.create({
