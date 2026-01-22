@@ -3,10 +3,10 @@ import { StatsCard } from '@/components/StatsCard';
 import { DailyReport } from '@/components/DailyReport';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getTopicStats, getTopicDailyStats, getSessionsByTopic } from '@/lib/database';
+import { getTopicStats, getTopicDailyStats, getSessionsByTopic, deleteTopic } from '@/lib/database';
 import { formatDuration } from '@/lib/utils';
 import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
-import { ArrowLeft, Clock, Hash, TrendingUp } from 'lucide-react-native';
+import { ArrowLeft, Clock, Hash, TrendingUp, Trash2 } from 'lucide-react-native';
 import * as React from 'react';
 import {
     RefreshControl,
@@ -14,6 +14,7 @@ import {
     Pressable,
     View,
     StyleSheet,
+    Alert,
 } from 'react-native';
 
 export default function TopicAnalyticsScreen() {
@@ -79,6 +80,29 @@ export default function TopicAnalyticsScreen() {
         return new Date(dateStr).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' });
     };
 
+    const handleDelete = async () => {
+        Alert.alert(
+            'Delete Topic',
+            `Delete all sessions for "${topic}"?`,
+            [
+                { text: 'Cancel', style: 'cancel' },
+                {
+                    text: 'Delete',
+                    style: 'destructive',
+                    onPress: async () => {
+                        try {
+                            await deleteTopic(topic);
+                            router.back();
+                        } catch (error) {
+                            console.error(error);
+                            Alert.alert('Error', 'Failed to delete topic');
+                        }
+                    },
+                },
+            ]
+        );
+    };
+
     return (
         <>
             <Stack.Screen
@@ -90,6 +114,11 @@ export default function TopicAnalyticsScreen() {
                     headerLeft: () => (
                         <Pressable onPress={() => router.back()} style={{ marginRight: 16 }}>
                             <ArrowLeft size={24} color={colors.foreground} />
+                        </Pressable>
+                    ),
+                    headerRight: () => (
+                        <Pressable onPress={handleDelete} style={{ marginRight: 0 }}>
+                            <Trash2 size={24} color={colors.destructive} />
                         </Pressable>
                     ),
                 }}

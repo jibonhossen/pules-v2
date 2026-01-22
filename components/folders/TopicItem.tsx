@@ -3,10 +3,10 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration } from '@/lib/utils';
-import { ChevronDown, ChevronRight, BarChart3, Play, Trash2, FolderInput } from 'lucide-react-native';
+import { Play, FolderInput, BarChart3 } from 'lucide-react-native';
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
-import { Alert, Pressable, View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
@@ -62,56 +62,18 @@ export function TopicItem({
         .activeOffsetX([-10, 10])
         .onUpdate((event) => {
             if (isOpen.value) {
-                // Clamped drag from open state
-                // If open at +ACTION_WIDTH (Right/Continue), dragging left reduces it
-                // If open at -ACTION_WIDTH (Left/Delete), dragging right increases it
-                // We use base value based on initial state
-                // But simplistically:
-                const offset = translateX.value > 0 ? ACTION_WIDTH : -ACTION_WIDTH;
-                // This logic is tricky with state. simpler to just read translation
-                // But generally we just want to limit the max extents.
-
-                // Let's use a simpler approach: Just clamp the raw new value.
-                // But event.translationX is delta from BEFORE touch.
-                // if isOpen, we need to add the offset? 
-                // reanimated gesture handler: translationX is total translation since gesture start.
-                // So if we started at 0 (closed), it's 0+trans.
-                // If we started at Open, we need to handle that.
-                // Actually existing logic `if (isOpen.value) { translateX.value = event.translationX }` implies it jumps to 0?
-                // No, usually you assume start is 0 unless you use context. 
-                // The current code is likely buggy if isOpen is true: it sets value = event.translationX (which starts at 0).
-                // So it snaps closed! (User might haven't noticed if they didn't try to drag FROM open).
-
-                // Focusing on the "extra space" issue (drags too far):
-                // We will clamp.
-                // But first let's fix the logic properly.
-                // Actually the current code:
-                // if (isOpen) { translateX.value = event.translationX }
-                // This means if it WAS open at 70, and I touch and drag 1px, it jumps to 1. 
-                // That's a bug, but maybe out of scope unless it contributes.
-
-                // I will stick to clamping the "directions".
-
-                const val = event.translationX;
-                // Clamp between -ACTION_WIDTH and ACTION_WIDTH
-                // Use a slight overshoot for feel? User said "extra space" so clamp tight.
-                translateX.value = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, val));
+                // If open (at ACTION_WIDTH), allow dragging left to close (towards 0)
+                const target = ACTION_WIDTH + event.translationX;
+                translateX.value = Math.max(0, Math.min(ACTION_WIDTH, target));
             } else {
-                // Closed state
+                // Closed state - only swipe right (positive)
                 const val = event.translationX;
-                translateX.value = Math.max(-ACTION_WIDTH, Math.min(ACTION_WIDTH, val));
+                translateX.value = Math.max(0, Math.min(ACTION_WIDTH, val));
             }
         })
         .onEnd((event) => {
-            // Delete (Swipe Left -> Right side exposed) - translateX negative
-            if (translateX.value < -ACTION_WIDTH / 2 || event.velocityX < -500) {
-                translateX.value = withTiming(-ACTION_WIDTH, { duration: 200 });
-                isOpen.value = true;
-                runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-                runOnJS(handleRegisterOpen)();
-
-                // Continue (Swipe Right -> Left side exposed) - translateX positive
-            } else if (translateX.value > ACTION_WIDTH / 2 || event.velocityX > 500) {
+            // Continue (Swipe Right -> Left side exposed) - translateX positive
+            if (translateX.value > ACTION_WIDTH / 2 || event.velocityX > 500) {
                 translateX.value = withTiming(ACTION_WIDTH, { duration: 200 });
                 isOpen.value = true;
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
@@ -145,36 +107,17 @@ export function TopicItem({
         transform: [{ translateX: translateX.value }],
     }));
 
-    const deleteStyle = useAnimatedStyle(() => ({
+    // Continue Action (Right Swipe -> Reveals Left Side)
+    // Interpolate on Positive values [0, 70]
+    const continueStyle = useAnimatedStyle(() => ({
         opacity: interpolate(translateX.value, [0, ACTION_WIDTH], [0, 1]),
         transform: [{ translateX: interpolate(translateX.value, [0, ACTION_WIDTH], [-ACTION_WIDTH, 0]) }]
-    }));
-
-    const continueStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0]),
-        transform: [{ translateX: interpolate(translateX.value, [-ACTION_WIDTH, 0], [0, ACTION_WIDTH]) }]
     }));
 
     const handleContinue = () => {
         handleClose();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onStart(topic);
-    };
-
-    const handleDelete = () => {
-        handleClose();
-        Alert.alert(
-            'Delete Topic',
-            `Delete all sessions for "${topic}"?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => onDelete(topic),
-                },
-            ]
-        );
     };
 
     const formatLastSession = (dateStr: string) => {
@@ -190,26 +133,12 @@ export function TopicItem({
 
     return (
         <View style={styles.container}>
-            {/* Delete action */}
-            {/* Delete action (Left side) */}
-            <Animated.View
-                style={[
-                    deleteStyle,
-                    styles.actionButton,
-                    { left: 0, backgroundColor: colors.destructive, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
-                ]}
-            >
-                <Pressable onPress={handleDelete} style={styles.actionPressable}>
-                    <Trash2 size={18} color="#fff" />
-                </Pressable>
-            </Animated.View>
-
-            {/* Continue action (Right side) */}
+            {/* Continue action (Left side, revealed by Right Swipe) */}
             <Animated.View
                 style={[
                     continueStyle,
                     styles.actionButton,
-                    { right: 0, backgroundColor: colors.primary, borderTopRightRadius: 12, borderBottomRightRadius: 12 },
+                    { left: 0, backgroundColor: colors.primary, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
                 ]}
             >
                 <Pressable onPress={handleContinue} style={styles.actionPressable}>

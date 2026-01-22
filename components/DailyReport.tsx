@@ -5,62 +5,9 @@ import { ChevronLeft, ChevronRight } from 'lucide-react-native';
 import * as React from 'react';
 import { Pressable, View, Dimensions, StyleSheet } from 'react-native';
 import * as Haptics from 'expo-haptics';
-import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import Animated, {
-    runOnJS,
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming,
-} from 'react-native-reanimated';
+import { BarChart } from 'react-native-gifted-charts';
 
 const { width: SCREEN_WIDTH } = Dimensions.get('window');
-const SWIPE_THRESHOLD = SCREEN_WIDTH * 0.25;
-
-interface DailyBarProps {
-    day: string;
-    hours: number;
-    maxHours: number;
-    isToday: boolean;
-    isCurrentWeek: boolean;
-}
-
-function DailyBar({ day, hours, maxHours, isToday, isCurrentWeek }: DailyBarProps) {
-    const { colorScheme } = useColorScheme();
-    const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-
-    const height = maxHours > 0 ? Math.max((hours / maxHours) * 100, hours > 0 ? 8 : 0) : 0;
-
-    return (
-        <View style={styles.barContainer}>
-            <View style={styles.barWrapper}>
-                <View
-                    style={[
-                        styles.bar,
-                        {
-                            height: `${height}%`,
-                            backgroundColor: isToday && isCurrentWeek ? colors.primary : colors.secondary,
-                            minHeight: hours > 0 ? 4 : 0,
-                        },
-                    ]}
-                />
-            </View>
-            <Text
-                style={[
-                    styles.barLabel,
-                    {
-                        color: isToday && isCurrentWeek ? colors.primary : colors.mutedForeground,
-                        fontWeight: isToday && isCurrentWeek ? '700' : '400',
-                    },
-                ]}
-            >
-                {day}
-            </Text>
-            <Text variant="muted" style={styles.barValue}>
-                {hours >= 1 ? `${Math.floor(hours)}h ${Math.round((hours % 1) * 60)}m` : hours > 0 ? `${Math.round(hours * 60)}m` : '-'}
-            </Text>
-        </View>
-    );
-}
 
 interface DailyReportProps {
     data: Map<string, number>;
@@ -71,9 +18,6 @@ export function DailyReport({ data }: DailyReportProps) {
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
 
     const [weekOffset, setWeekOffset] = React.useState(0);
-    const translateX = useSharedValue(0);
-    const animatedOpacity = useSharedValue(1);
-
     const today = new Date();
     const todayStr = today.toISOString().split('T')[0];
 
@@ -109,7 +53,6 @@ export function DailyReport({ data }: DailyReportProps) {
         return seconds / 3600;
     });
 
-    const maxHours = Math.max(...dailyHours, 1);
     const totalSeconds = dailyHours.reduce((sum, h) => sum + h * 3600, 0);
     const totalHours = Math.floor(totalSeconds / 3600);
     const totalMinutes = Math.round((totalSeconds % 3600) / 60);
@@ -117,50 +60,38 @@ export function DailyReport({ data }: DailyReportProps) {
     const avgHours = Math.floor(avgSeconds / 3600);
     const avgMinutes = Math.round((avgSeconds % 3600) / 60);
 
-    const animateTransition = (direction: 'left' | 'right', callback: () => void) => {
-        const exitX = direction === 'left' ? -50 : 50;
-        const enterX = direction === 'left' ? 50 : -50;
-
-        animatedOpacity.value = withTiming(0, { duration: 150 });
-        translateX.value = withTiming(exitX, { duration: 150 }, () => {
-            runOnJS(callback)();
-            translateX.value = enterX;
-            translateX.value = withTiming(0, { duration: 200 });
-            animatedOpacity.value = withTiming(1, { duration: 150 });
-        });
-    };
-
     const goToPreviousWeek = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        animateTransition('right', () => setWeekOffset((prev) => prev + 1));
+        setWeekOffset((prev) => prev + 1);
     };
 
     const goToNextWeek = () => {
         if (weekOffset > 0) {
             Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            animateTransition('left', () => setWeekOffset((prev) => prev - 1));
+            setWeekOffset((prev) => prev - 1);
         }
     };
 
-    const panGesture = Gesture.Pan()
-        .activeOffsetX([-20, 20])
-        .onUpdate((event) => {
-            translateX.value = event.translationX * 0.5;
-        })
-        .onEnd((event) => {
-            if (event.translationX > SWIPE_THRESHOLD || event.velocityX > 500) {
-                runOnJS(goToPreviousWeek)();
-            } else if ((event.translationX < -SWIPE_THRESHOLD || event.velocityX < -500) && weekOffset > 0) {
-                runOnJS(goToNextWeek)();
-            } else {
-                translateX.value = withTiming(0, { duration: 200 });
-            }
-        });
+    // Chart Data Preparation
+    const barData = days.map((d, index) => {
+        const hours = dailyHours[index];
+        const isToday = d.dateStr === todayStr && weekOffset === 0;
+        const color = isToday ? colors.primary : '#A0A0A0'; // Muted grey for non-today
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ translateX: translateX.value }],
-        opacity: animatedOpacity.value,
-    }));
+        return {
+            value: hours,
+            label: d.dayLabel,
+            frontColor: color,
+            topLabelComponent: () => hours > 0 ? (
+                <Text style={{ fontSize: 10, marginBottom: 4, width: 30, textAlign: 'center', color: colors.mutedForeground }}>
+                    {hours < 1 ? Math.round(hours * 60) + 'm' : hours.toFixed(1)}
+                </Text>
+            ) : null,
+        };
+    });
+
+    // Find max value for Y-axis scaling, add some buffer
+    const maxValue = Math.max(...dailyHours, 1);
 
     return (
         <View style={[styles.container, { backgroundColor: colors.card }]}>
@@ -195,7 +126,7 @@ export function DailyReport({ data }: DailyReportProps) {
                         </Text>
                     </View>
                     <View style={styles.statItem}>
-                        <Text variant="muted" style={styles.statLabel}>Daily Avg</Text>
+                        <Text variant="muted" style={styles.statLabel}>Avg</Text>
                         <Text style={[styles.statValue, { color: colors.primary }]}>
                             {avgHours > 0 ? `${avgHours}h ` : ''}{avgMinutes}m
                         </Text>
@@ -204,48 +135,68 @@ export function DailyReport({ data }: DailyReportProps) {
             </View>
 
             {/* Bar Chart */}
-            <GestureDetector gesture={panGesture}>
-                <Animated.View style={[animatedStyle, styles.barsContainer]}>
-                    {days.map((d, index) => (
-                        <DailyBar
-                            key={d.dateStr}
-                            day={d.dayLabel}
-                            hours={dailyHours[index]}
-                            maxHours={maxHours}
-                            isToday={d.dateStr === todayStr}
-                            isCurrentWeek={weekOffset === 0}
-                        />
-                    ))}
-                </Animated.View>
-            </GestureDetector>
+            <View style={{ alignItems: 'center', marginTop: 10 }}>
+                <BarChart
+                    data={barData}
+                    barWidth={32}
+                    spacing={14}
+                    barBorderTopLeftRadius={4}
+                    barBorderTopRightRadius={4}
+                    hideRules
+                    xAxisThickness={1}
+                    xAxisColor={colors.border}
+                    yAxisThickness={0}
+                    yAxisTextStyle={{ color: colors.mutedForeground, fontSize: 10 }}
+                    noOfSections={3}
+                    maxValue={maxValue * 1.1}
+                    height={180}
+                    width={SCREEN_WIDTH - 70}
+                    initialSpacing={10}
+                    labelTextStyle={{ color: colors.mutedForeground, fontSize: 11 }}
+                    hideYAxisText
+                />
+            </View>
         </View>
     );
 }
 
 const styles = StyleSheet.create({
     container: {
-        borderRadius: 16,
-        padding: 16,
+        borderRadius: 24,
+        padding: 20,
+        // Shadow for premium feel
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: 4,
+        },
+        shadowOpacity: 0.05,
+        shadowRadius: 12,
+        elevation: 5,
     },
     header: {
         flexDirection: 'row',
         alignItems: 'center',
         justifyContent: 'space-between',
-        marginBottom: 16,
+        marginBottom: 24,
     },
     navigation: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 8,
+        gap: 12,
+        backgroundColor: 'rgba(0,0,0,0.03)',
+        padding: 4,
+        paddingHorizontal: 8,
+        borderRadius: 20,
     },
     navButton: {
-        borderRadius: 20,
-        padding: 4,
+        borderRadius: 16,
+        padding: 6,
     },
     weekLabel: {
-        fontSize: 16,
+        fontSize: 14,
         fontWeight: '600',
-        minWidth: 100,
+        minWidth: 90,
         textAlign: 'center',
     },
     stats: {
@@ -257,35 +208,11 @@ const styles = StyleSheet.create({
         alignItems: 'flex-end',
     },
     statLabel: {
-        fontSize: 12,
+        fontSize: 11,
+        marginBottom: 2,
     },
     statValue: {
-        fontWeight: '600',
-    },
-    barsContainer: {
-        flexDirection: 'row',
-        gap: 8,
-    },
-    barContainer: {
-        flex: 1,
-        alignItems: 'center',
-    },
-    barWrapper: {
-        width: '100%',
-        height: 120,
-        justifyContent: 'flex-end',
-        overflow: 'hidden',
-        borderRadius: 6,
-    },
-    bar: {
-        width: '100%',
-        borderRadius: 6,
-    },
-    barLabel: {
-        marginTop: 8,
-        fontSize: 12,
-    },
-    barValue: {
-        fontSize: 12,
+        fontSize: 15,
+        fontWeight: '700',
     },
 });
