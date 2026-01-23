@@ -210,9 +210,9 @@ export default function TimerScreen() {
         }
     };
 
-    const handleContinueSession = async (sessionTopic: string) => {
+    const handleContinueSession = async (sessionTopic: string, folderId: number | null) => {
         setTopic(sessionTopic);
-        await startTimer(sessionTopic);
+        await startTimer(sessionTopic, folderId ?? undefined);
         setViewMode('focus');
     };
 

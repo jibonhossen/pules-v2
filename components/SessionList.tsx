@@ -42,7 +42,7 @@ function SwipeableSessionCard({
     onDelete,
 }: {
     session: Session;
-    onContinue: (topic: string) => void;
+    onContinue: (topic: string, folderId: number | null) => void;
     onTap: (session: Session) => void;
     onDelete: (session: Session) => void;
 }) {
@@ -106,7 +106,7 @@ function SwipeableSessionCard({
         translateX.value = withTiming(0, { duration: 200 });
         openDirection.value = null;
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onContinue(session.topic);
+        onContinue(session.topic, session.folder_id);
     };
 
     const handleDelete = () => {
@@ -182,13 +182,15 @@ function SwipeableSessionCard({
 interface SessionHistorySheetProps {
     sheetRef: React.RefObject<BottomSheet | null>;
     topic: string | null;
-    onContinue: (topic: string) => void;
+    folderId: number | null;
+    onContinue: (topic: string, folderId: number | null) => void;
     onTopicRenamed: () => void;
 }
 
 function SessionHistorySheet({
     sheetRef,
     topic,
+    folderId,
     onContinue,
     onTopicRenamed,
 }: SessionHistorySheetProps) {
@@ -234,7 +236,7 @@ function SessionHistorySheet({
     const handleContinue = () => {
         if (topic) {
             sheetRef.current?.close();
-            onContinue(isEditing ? editedTopic : (editedTopic || topic));
+            onContinue(isEditing ? editedTopic : (editedTopic || topic), folderId);
         }
     };
 
@@ -375,12 +377,13 @@ function SessionHistorySheet({
 }
 
 interface SessionListProps {
-    onStartSession: (topic: string) => void;
+    onStartSession: (topic: string, folderId: number | null) => void;
 }
 
 export function SessionList({ onStartSession }: SessionListProps) {
     const { todaySessions, loadSessions } = useSessionStore();
     const [selectedTopic, setSelectedTopic] = React.useState<string | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = React.useState<number | null>(null);
     const sheetRef = React.useRef<BottomSheet>(null);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
@@ -391,11 +394,12 @@ export function SessionList({ onStartSession }: SessionListProps) {
 
     const handleTap = (session: Session) => {
         setSelectedTopic(session.topic);
+        setSelectedFolderId(session.folder_id);
         sheetRef.current?.snapToIndex(0);
     };
 
-    const handleContinue = (topic: string) => {
-        onStartSession(topic);
+    const handleContinue = (topic: string, folderId: number | null) => {
+        onStartSession(topic, folderId);
     };
 
     const handleTopicRenamed = () => {
@@ -455,6 +459,7 @@ export function SessionList({ onStartSession }: SessionListProps) {
             <SessionHistorySheet
                 sheetRef={sheetRef}
                 topic={selectedTopic}
+                folderId={selectedFolderId}
                 onContinue={handleContinue}
                 onTopicRenamed={handleTopicRenamed}
             />

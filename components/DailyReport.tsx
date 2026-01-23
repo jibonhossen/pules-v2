@@ -11,42 +11,18 @@ const { width: SCREEN_WIDTH } = Dimensions.get('window');
 
 interface DailyReportProps {
     data: Map<string, number>;
+    label: string;
+    onPrev: () => void;
+    onNext: () => void;
+    canGoNext: boolean;
+    mode: 'week' | 'month';
+    days: { date: Date; dateStr: string; dayLabel: string }[];
 }
 
-export function DailyReport({ data }: DailyReportProps) {
+export function DailyReport({ data, label, onPrev, onNext, canGoNext, mode, days }: DailyReportProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-
-    const [weekOffset, setWeekOffset] = React.useState(0);
-    const today = new Date();
-    const todayStr = today.toISOString().split('T')[0];
-
-    const getWeekDays = (offset: number) => {
-        const days: { date: Date; dateStr: string; dayLabel: string }[] = [];
-        const referenceDate = new Date(today);
-        referenceDate.setDate(today.getDate() - (offset * 7));
-
-        for (let i = 6; i >= 0; i--) {
-            const date = new Date(referenceDate);
-            date.setDate(referenceDate.getDate() - i);
-            days.push({
-                date,
-                dateStr: date.toISOString().split('T')[0],
-                dayLabel: date.toLocaleDateString('en-US', { weekday: 'short' }),
-            });
-        }
-        return days;
-    };
-
-    const days = getWeekDays(weekOffset);
-
-    const weekStart = days[0].date;
-    const weekEnd = days[6].date;
-    const weekLabel = weekOffset === 0
-        ? 'This Week'
-        : weekOffset === 1
-            ? 'Last Week'
-            : `${weekStart.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })} - ${weekEnd.toLocaleDateString('en-US', { month: 'short', day: 'numeric' })}`;
+    const todayStr = new Date().toISOString().split('T')[0];
 
     const dailyHours = days.map((d) => {
         const seconds = data.get(d.dateStr) || 0;
@@ -56,33 +32,27 @@ export function DailyReport({ data }: DailyReportProps) {
     const totalSeconds = dailyHours.reduce((sum, h) => sum + h * 3600, 0);
     const totalHours = Math.floor(totalSeconds / 3600);
     const totalMinutes = Math.round((totalSeconds % 3600) / 60);
-    const avgSeconds = totalSeconds / 7;
+    const avgSeconds = totalSeconds / days.length; // Dynamic divisor based on 7 or ~30
     const avgHours = Math.floor(avgSeconds / 3600);
     const avgMinutes = Math.round((avgSeconds % 3600) / 60);
-
-    const goToPreviousWeek = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        setWeekOffset((prev) => prev + 1);
-    };
-
-    const goToNextWeek = () => {
-        if (weekOffset > 0) {
-            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-            setWeekOffset((prev) => prev - 1);
-        }
-    };
 
     // Chart Data Preparation
     const barData = days.map((d, index) => {
         const hours = dailyHours[index];
-        const isToday = d.dateStr === todayStr && weekOffset === 0;
-        const color = isToday ? colors.primary : '#A0A0A0'; // Muted grey for non-today
+        const isToday = d.dateStr === todayStr;
+        const color = isToday ? colors.primary : '#A0A0A0';
+
+        // Adjust labels based on mode
+        let displayLabel = d.dayLabel;
+        if (mode === 'month') {
+            displayLabel = d.date.getDate().toString();
+        }
 
         return {
             value: hours,
-            label: d.dayLabel,
+            label: displayLabel,
             frontColor: color,
-            topLabelComponent: () => hours > 0 ? (
+            topLabelComponent: () => hours > 0 && (mode === 'week' || mode === 'month') ? (
                 <Text style={{ fontSize: 10, marginBottom: 4, width: 30, textAlign: 'center', color: colors.mutedForeground }}>
                     {hours < 1 ? Math.round(hours * 60) + 'm' : hours.toFixed(1)}
                 </Text>
@@ -90,8 +60,19 @@ export function DailyReport({ data }: DailyReportProps) {
         };
     });
 
-    // Find max value for Y-axis scaling, add some buffer
-    const maxValue = Math.max(...dailyHours, 1);
+    const maxValue = Math.max(...dailyHours, 0.1); // Ensure non-zero
+
+    const handlePrev = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+        onPrev();
+    };
+
+    const handleNext = () => {
+        if (canGoNext) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            onNext();
+        }
+    };
 
     return (
         <View style={[styles.container, { backgroundColor: colors.card }]}>
@@ -99,20 +80,20 @@ export function DailyReport({ data }: DailyReportProps) {
             <View style={styles.header}>
                 <View style={styles.navigation}>
                     <Pressable
-                        onPress={goToPreviousWeek}
+                        onPress={handlePrev}
                         style={[styles.navButton, { backgroundColor: colors.muted }]}
                     >
                         <ChevronLeft size={20} color={colors.foreground} />
                     </Pressable>
-                    <Text style={[styles.weekLabel, { color: colors.foreground }]}>
-                        {weekLabel}
+                    <Text style={[styles.label, { color: colors.foreground }]}>
+                        {label}
                     </Text>
                     <Pressable
-                        onPress={goToNextWeek}
-                        disabled={weekOffset === 0}
+                        onPress={handleNext}
+                        disabled={!canGoNext}
                         style={[
                             styles.navButton,
-                            { backgroundColor: colors.muted, opacity: weekOffset === 0 ? 0.3 : 1 },
+                            { backgroundColor: colors.muted, opacity: !canGoNext ? 0.3 : 1 },
                         ]}
                     >
                         <ChevronRight size={20} color={colors.foreground} />
@@ -135,13 +116,13 @@ export function DailyReport({ data }: DailyReportProps) {
             </View>
 
             {/* Bar Chart */}
-            <View style={{ alignItems: 'center', marginTop: 10 }}>
+            <View style={{ alignItems: 'center', marginTop: 10, overflow: 'hidden' }}>
                 <BarChart
                     data={barData}
-                    barWidth={32}
-                    spacing={14}
-                    barBorderTopLeftRadius={4}
-                    barBorderTopRightRadius={4}
+                    barWidth={mode === 'week' ? 32 : 18}
+                    spacing={mode === 'week' ? 14 : 10}
+                    barBorderTopLeftRadius={2}
+                    barBorderTopRightRadius={2}
                     hideRules
                     xAxisThickness={1}
                     xAxisColor={colors.border}
@@ -151,8 +132,9 @@ export function DailyReport({ data }: DailyReportProps) {
                     maxValue={maxValue * 1.1}
                     height={180}
                     width={SCREEN_WIDTH - 70}
+                    scrollable={mode === 'month'}
                     initialSpacing={10}
-                    labelTextStyle={{ color: colors.mutedForeground, fontSize: 11 }}
+                    labelTextStyle={{ color: colors.mutedForeground, fontSize: 10 }}
                     hideYAxisText
                 />
             </View>
@@ -164,12 +146,8 @@ const styles = StyleSheet.create({
     container: {
         borderRadius: 24,
         padding: 20,
-        // Shadow for premium feel
         shadowColor: "#000",
-        shadowOffset: {
-            width: 0,
-            height: 4,
-        },
+        shadowOffset: { width: 0, height: 4 },
         shadowOpacity: 0.05,
         shadowRadius: 12,
         elevation: 5,
@@ -193,7 +171,7 @@ const styles = StyleSheet.create({
         borderRadius: 16,
         padding: 6,
     },
-    weekLabel: {
+    label: {
         fontSize: 14,
         fontWeight: '600',
         minWidth: 90,

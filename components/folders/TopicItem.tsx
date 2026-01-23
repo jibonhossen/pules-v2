@@ -3,7 +3,7 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration } from '@/lib/utils';
-import { Play, FolderInput, BarChart3 } from 'lucide-react-native';
+import { Play, FolderInput, BarChart3, Edit3 } from 'lucide-react-native';
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
 import { Pressable, View, StyleSheet } from 'react-native';
@@ -28,6 +28,7 @@ interface TopicItemProps {
     onAnalytics: (topic: string) => void;
     onDelete: (topic: string) => void;
     onMove?: (topic: string) => void;
+    onRename?: (topic: string) => void;
 }
 
 export function TopicItem({
@@ -39,6 +40,7 @@ export function TopicItem({
     onAnalytics,
     onDelete,
     onMove,
+    onRename,
 }: TopicItemProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
@@ -167,6 +169,14 @@ export function TopicItem({
                         </Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {onRename && (
+                            <Pressable
+                                onPress={() => onRename(topic)}
+                                style={[styles.analyticsButton, { backgroundColor: `${colors.primary}20` }]}
+                            >
+                                <Edit3 size={16} color={colors.primary} />
+                            </Pressable>
+                        )}
                         {onMove && (
                             <Pressable
                                 onPress={() => onMove(topic)}

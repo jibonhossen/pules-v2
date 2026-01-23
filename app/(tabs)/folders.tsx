@@ -1,4 +1,4 @@
-import { FolderCard, CreateFolderModal, AddTopicModal, SelectFolderModal, TopicItem } from '@/components/folders';
+import { FolderCard, CreateFolderModal, AddTopicModal, SelectFolderModal, TopicItem, RenameTopicModal } from '@/components/folders';
 import { SwipeProvider } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
@@ -12,8 +12,9 @@ import {
     getUnfolderedTopics,
     getFolderStats,
     moveTopicToFolder,
-    createTopicInFolder, // Added this line
+    createTopicInFolder,
     deleteTopic,
+    renameAllSessionsWithTopic,
     type Folder,
 } from '@/lib/database';
 import { useSessionStore } from '@/store/sessions';
@@ -58,6 +59,8 @@ export default function FoldersScreen() {
     const [selectedFolderForTopic, setSelectedFolderForTopic] = React.useState<{ id: number; name: string; color: string } | null>(null);
     const [moveTopicModalVisible, setMoveTopicModalVisible] = React.useState(false);
     const [topicToMove, setTopicToMove] = React.useState('');
+    const [renameTopicModalVisible, setRenameTopicModalVisible] = React.useState(false);
+    const [topicToRename, setTopicToRename] = React.useState('');
 
     const loadData = React.useCallback(async () => {
         try {
@@ -178,6 +181,21 @@ export default function FoldersScreen() {
         }
     };
 
+    const handleOpenRenameTopic = (topic: string) => {
+        setTopicToRename(topic);
+        setRenameTopicModalVisible(true);
+    };
+
+    const handleRenameTopic = async (oldTopic: string, newTopic: string) => {
+        try {
+            await renameAllSessionsWithTopic(oldTopic, newTopic);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await loadData();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to rename topic');
+        }
+    };
+
     const insets = useSafeAreaInsets();
 
     return (
@@ -255,6 +273,7 @@ export default function FoldersScreen() {
                                     onStartTopic={(topic, folderId) => handleStartTopic(topic, folderId)}
                                     onTopicAnalytics={handleTopicAnalytics}
                                     onDeleteTopic={handleDeleteTopic}
+                                    onRenameTopic={handleOpenRenameTopic}
                                 />
                             ))}
 
@@ -276,6 +295,7 @@ export default function FoldersScreen() {
                                                 onAnalytics={handleTopicAnalytics}
                                                 onDelete={handleDeleteTopic}
                                                 onMove={handleUnorganizedTopicPress}
+                                                onRename={handleOpenRenameTopic}
                                             />
                                         ))}
                                     </View>
@@ -306,6 +326,13 @@ export default function FoldersScreen() {
                     topic={topicToMove}
                     onClose={() => setMoveTopicModalVisible(false)}
                     onSelect={handleMoveTopic}
+                />
+
+                <RenameTopicModal
+                    visible={renameTopicModalVisible}
+                    currentTopic={topicToRename}
+                    onClose={() => setRenameTopicModalVisible(false)}
+                    onSave={handleRenameTopic}
                 />
             </View>
         </SwipeProvider>

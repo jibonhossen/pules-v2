@@ -39,6 +39,7 @@ interface FolderCardProps {
     onStartTopic: (topic: string, folderId: number) => void;
     onTopicAnalytics: (topic: string) => void;
     onDeleteTopic: (topic: string) => void;
+    onRenameTopic: (topic: string) => void;
 }
 
 export function FolderCard({
@@ -52,6 +53,7 @@ export function FolderCard({
     onStartTopic,
     onTopicAnalytics,
     onDeleteTopic,
+    onRenameTopic,
 }: FolderCardProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
@@ -228,6 +230,7 @@ export function FolderCard({
                                 onStart={() => onStartTopic(topic.topic, folder.id)}
                                 onAnalytics={onTopicAnalytics}
                                 onDelete={onDeleteTopic}
+                                onRename={onRenameTopic}
                             />
                         ))
                     )}

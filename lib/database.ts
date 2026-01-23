@@ -381,6 +381,53 @@ export async function getTopicDailyStats(topic: string, days: number = 30): Prom
     return dailyMap;
 }
 
+// Get daily stats for a specific topic within a date range
+export async function getTopicDailyStatsForRange(topic: string, startDate: string, endDate: string): Promise<Map<string, number>> {
+    const database = await getDatabase();
+
+    // Ensure dates are string format YYYY-MM-DD for comparison if needed, 
+    // but here we rely on ISO string comparison for specific range.
+    // Ideally inputs are ISO strings.
+
+    const sessions = await database.getAllAsync<Session>(
+        `SELECT * FROM sessions 
+     WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
+     ORDER BY start_time`,
+        [topic, startDate, endDate]
+    );
+
+    const dailyMap = new Map<string, number>();
+
+    sessions.forEach((session) => {
+        const date = session.start_time.split('T')[0];
+        const current = dailyMap.get(date) || 0;
+        dailyMap.set(date, current + (session.duration_seconds || 0));
+    });
+
+    return dailyMap;
+}
+
+export async function getFolderDailyStatsForRange(folderId: number, startDate: string, endDate: string): Promise<Map<string, number>> {
+    const database = await getDatabase();
+
+    const sessions = await database.getAllAsync<Session>(
+        `SELECT * FROM sessions 
+     WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
+     ORDER BY start_time`,
+        [folderId, startDate, endDate]
+    );
+
+    const dailyMap = new Map<string, number>();
+
+    sessions.forEach((session) => {
+        const date = session.start_time.split('T')[0];
+        const current = dailyMap.get(date) || 0;
+        dailyMap.set(date, current + (session.duration_seconds || 0));
+    });
+
+    return dailyMap;
+}
+
 // Get daily stats for a specific folder
 export async function getFolderDailyStats(folderId: number, days: number = 30): Promise<Map<string, number>> {
     const database = await getDatabase();
@@ -413,4 +460,49 @@ export async function moveTopicToFolder(topic: string, folderId: number): Promis
         'UPDATE sessions SET folder_id = ? WHERE topic = ?',
         [folderId, topic]
     );
+}
+
+// Get topic stats for a specific date range
+export async function getTopicStatsForRange(topic: string, startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; averageTime: number }> {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; averageTime: number }>(
+        `SELECT 
+            COALESCE(SUM(duration_seconds), 0) as totalTime,
+            COUNT(*) as sessionCount,
+            COALESCE(AVG(duration_seconds), 0) as averageTime
+        FROM sessions 
+        WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [topic, startDate, endDate]
+    );
+    return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
+}
+
+// Get folder stats for a specific date range
+export async function getFolderStatsForRange(folderId: number, startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; topicCount: number }>(
+        `SELECT 
+            COALESCE(SUM(duration_seconds), 0) as totalTime,
+            COUNT(*) as sessionCount,
+            COUNT(DISTINCT topic) as topicCount
+        FROM sessions 
+        WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [folderId, startDate, endDate]
+    );
+    return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
+}
+
+// Get global stats for a specific date range
+export async function getStatsForRange(startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; averageTime: number }> {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; averageTime: number }>(
+        `SELECT 
+            COALESCE(SUM(duration_seconds), 0) as totalTime,
+            COUNT(*) as sessionCount,
+            COALESCE(AVG(duration_seconds), 0) as averageTime
+        FROM sessions 
+        WHERE start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [startDate, endDate]
+    );
+    return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
