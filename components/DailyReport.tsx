@@ -118,6 +118,7 @@ export function DailyReport({ data, label, onPrev, onNext, canGoNext, mode, days
             {/* Bar Chart */}
             <View style={{ alignItems: 'center', marginTop: 10, overflow: 'hidden' }}>
                 <BarChart
+                    key={colorScheme}
                     data={barData}
                     barWidth={mode === 'week' ? 32 : 18}
                     spacing={mode === 'week' ? 14 : 10}
@@ -128,6 +129,7 @@ export function DailyReport({ data, label, onPrev, onNext, canGoNext, mode, days
                     xAxisColor={colors.border}
                     yAxisThickness={0}
                     yAxisTextStyle={{ color: colors.mutedForeground, fontSize: 10 }}
+                    xAxisLabelTextStyle={{ color: colors.mutedForeground, fontSize: 10 }}
                     noOfSections={3}
                     maxValue={maxValue * 1.1}
                     height={180}

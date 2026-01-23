@@ -3,6 +3,7 @@ import { SessionList } from '@/components/SessionList';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppState } from '@/hooks/useAppState';
 import { useSessionStore } from '@/store/sessions';
 import { MoonStar, Play, Square, Sun, FolderOpen } from 'lucide-react-native';
 import * as React from 'react';
@@ -174,7 +175,12 @@ export default function TimerScreen() {
         tick,
         loadSessions,
         loadStats,
+        onAppBackground,
+        onAppForeground,
     } = useSessionStore();
+
+    // Handle app state changes - pause on background, resume on foreground
+    useAppState(onAppBackground, onAppForeground);
 
     // Timer tick effect
     React.useEffect(() => {
