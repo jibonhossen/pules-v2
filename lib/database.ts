@@ -17,6 +17,10 @@ export interface Session {
     start_time: string;
     end_time: string | null;
     duration_seconds: number;
+    // Joined fields
+    folder_name?: string | null;
+    folder_color?: string | null;
+    folder_icon?: string | null;
 }
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -130,7 +134,10 @@ export async function endSession(id: number): Promise<void> {
 export async function getAllSessions(): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        'SELECT * FROM sessions ORDER BY start_time DESC'
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+         FROM sessions 
+         LEFT JOIN folders ON sessions.folder_id = folders.id 
+         ORDER BY start_time DESC`
     );
 }
 
@@ -140,9 +147,11 @@ export async function getSessionsByDateRange(
 ): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        `SELECT * FROM sessions 
-     WHERE start_time >= ? AND start_time <= ? 
-     ORDER BY start_time DESC`,
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+         FROM sessions 
+         LEFT JOIN folders ON sessions.folder_id = folders.id 
+         WHERE start_time >= ? AND start_time <= ? 
+         ORDER BY start_time DESC`,
         [startDate, endDate]
     );
 }
@@ -218,7 +227,11 @@ export async function getCurrentStreak(): Promise<number> {
 export async function getSessionsByTopic(topic: string): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        'SELECT * FROM sessions WHERE topic = ? ORDER BY start_time DESC',
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+         FROM sessions 
+         LEFT JOIN folders ON sessions.folder_id = folders.id 
+         WHERE topic = ? 
+         ORDER BY start_time DESC`,
         [topic]
     );
 }

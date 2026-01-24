@@ -8,7 +8,7 @@ import {
 import { PULSE_COLORS } from '@/constants/theme';
 import { useSessionStore } from '@/store/sessions';
 import { formatDuration, formatTime, formatDate } from '@/lib/utils';
-import { Edit3, Play, Trash2, X } from 'lucide-react-native';
+import { Edit3, Play, Trash2, X, FolderOpen } from 'lucide-react-native';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
@@ -166,6 +166,14 @@ function SwipeableSessionCard({
                                 {formatTime(session.start_time)}
                                 {session.end_time && ` - ${formatTime(session.end_time)}`}
                             </Text>
+                            {session.folder_name && (
+                                <View style={[styles.folderBadge, { backgroundColor: `${session.folder_color || colors.primary}20`, marginTop: 8 }]}>
+                                    <FolderOpen size={12} color={session.folder_color || colors.primary} />
+                                    <Text style={[styles.folderBadgeText, { color: session.folder_color || colors.primary }]}>
+                                        {session.folder_name}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
                         <View style={styles.cardRight}>
                             <Text style={[styles.cardDuration, { color: colors.primary }]}>
@@ -668,5 +676,18 @@ const styles = StyleSheet.create({
         fontSize: 16,
         fontWeight: '700',
         color: '#fff',
+    },
+    folderBadge: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 6,
+        paddingHorizontal: 8,
+        paddingVertical: 4,
+        borderRadius: 8,
+        alignSelf: 'flex-start',
+    },
+    folderBadgeText: {
+        fontSize: 12,
+        fontWeight: '600',
     },
 });

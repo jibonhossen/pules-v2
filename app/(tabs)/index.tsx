@@ -386,7 +386,8 @@ const styles = StyleSheet.create({
     timerContainer: {
         flex: 1,
         alignItems: 'center',
-        justifyContent: 'center',
+        justifyContent: 'flex-start',
+        paddingTop: '20%',
     },
     inputSection: {
         borderTopWidth: 1,
