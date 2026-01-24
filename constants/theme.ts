@@ -39,7 +39,6 @@ export const PULSE_COLORS = {
 };
 
 // Heatmap color scale - Teal gradient
-// Heatmap color scale - Teal gradient
 export const HEATMAP_COLORS_DARK = {
   none: '#27272a',       // Zinc-800 - 0 hours
   low: '#134e4a',        // Teal-900 - <1 hour
