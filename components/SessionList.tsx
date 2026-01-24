@@ -1,28 +1,28 @@
 import { Text } from '@/components/ui/Text';
+import { PULSE_COLORS } from '@/constants/theme';
+import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
     deleteSession,
     getSessionsByTopic,
     renameAllSessionsWithTopic,
     type Session,
 } from '@/lib/database';
-import { PULSE_COLORS } from '@/constants/theme';
+import { formatDate, formatDuration, formatTime } from '@/lib/utils';
 import { useSessionStore } from '@/store/sessions';
-import { formatDuration, formatTime, formatDate } from '@/lib/utils';
-import { Edit3, Play, Trash2, X, FolderOpen } from 'lucide-react-native';
-import { useColorScheme } from '@/hooks/use-color-scheme';
-import * as React from 'react';
+import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import * as Haptics from 'expo-haptics';
+import { Edit3, FolderOpen, Play, Trash2, X } from 'lucide-react-native';
+import * as React from 'react';
 import {
     Alert,
+    Dimensions,
     Pressable,
     ScrollView,
+    StyleSheet,
     TextInput,
     View,
-    Dimensions,
-    StyleSheet,
 } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
-import BottomSheet, { BottomSheetBackdrop, BottomSheetScrollView } from '@gorhom/bottom-sheet';
 import Animated, {
     interpolate,
     runOnJS,
@@ -447,7 +447,12 @@ export function SessionList({ onStartSession }: SessionListProps) {
 
     return (
         <View style={styles.container}>
-            <ScrollView style={styles.scrollView} showsVerticalScrollIndicator={false}>
+            <ScrollView
+                style={styles.scrollView}
+                showsVerticalScrollIndicator={false}
+                keyboardDismissMode="on-drag"
+                keyboardShouldPersistTaps="handled"
+            >
                 <View style={styles.listHeader}>
                     <Text style={[styles.listTitle, { color: colors.foreground }]}>
                         Today's Sessions

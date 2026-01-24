@@ -5,18 +5,17 @@ import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppState } from '@/hooks/useAppState';
 import { useSessionStore } from '@/store/sessions';
-import { MoonStar, Play, Square, Sun, FolderOpen, Pause } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
+import { FolderOpen, MoonStar, Pause, Play, Square, Sun } from 'lucide-react-native';
+import * as React from 'react';
 import {
     Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    TextInput,
-    TouchableWithoutFeedback,
-    View,
     StyleSheet,
+    TextInput,
+    View
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -233,103 +232,101 @@ export default function TimerScreen() {
     };
 
     return (
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={[
-                    styles.container,
-                    {
-                        backgroundColor: colors.background,
-                        paddingTop: insets.top,
-                    }
-                ]}
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
-                    <ThemeToggle />
-                </View>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+                styles.container,
+                {
+                    backgroundColor: colors.background,
+                    paddingTop: insets.top,
+                }
+            ]}
+        >
+            {/* Header */}
+            <View style={styles.header}>
+                <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
+                <ThemeToggle />
+            </View>
 
-                {/* Segmented Control */}
-                <View style={styles.segmentWrapper}>
-                    <SegmentedControl value={viewMode} onChange={setViewMode} />
-                </View>
+            {/* Segmented Control */}
+            <View style={styles.segmentWrapper}>
+                <SegmentedControl value={viewMode} onChange={setViewMode} />
+            </View>
 
-                {/* Content */}
-                <View style={styles.content}>
-                    {viewMode === 'focus' ? (
-                        <View style={styles.timerContainer}>
-                            <CircularTimer
-                                elapsedSeconds={elapsedSeconds}
-                                isRunning={isRunning}
+            {/* Content */}
+            <View style={styles.content}>
+                {viewMode === 'focus' ? (
+                    <View style={styles.timerContainer}>
+                        <CircularTimer
+                            elapsedSeconds={elapsedSeconds}
+                            isRunning={isRunning}
+                        />
+                    </View>
+                ) : (
+                    <SessionList onStartSession={handleContinueSession} />
+                )}
+            </View>
+
+            {/* Input Section */}
+            <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
+                {!isRunning ? (
+                    <View style={styles.inputRow}>
+                        <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
+                            <TextInput
+                                placeholder="I'm working on..."
+                                placeholderTextColor={colors.mutedForeground}
+                                value={topic}
+                                onChangeText={setTopic}
+                                style={[styles.input, { color: colors.foreground }]}
                             />
                         </View>
-                    ) : (
-                        <SessionList onStartSession={handleContinueSession} />
-                    )}
-                </View>
-
-                {/* Input Section */}
-                <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
-                    {!isRunning ? (
-                        <View style={styles.inputRow}>
-                            <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
-                                <TextInput
-                                    placeholder="I'm working on..."
-                                    placeholderTextColor={colors.mutedForeground}
-                                    value={topic}
-                                    onChangeText={setTopic}
-                                    style={[styles.input, { color: colors.foreground }]}
-                                />
-                            </View>
+                        <TimerControlButton
+                            onPress={handleStart}
+                            disabled={!topic.trim()}
+                            color={colors.primary}
+                            icon={<Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />}
+                        />
+                    </View>
+                ) : (
+                    <View style={styles.controlsColumn}>
+                        {/* Controls */}
+                        <View style={styles.controlsRow}>
                             <TimerControlButton
-                                onPress={handleStart}
-                                disabled={!topic.trim()}
-                                color={colors.primary}
-                                icon={<Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />}
+                                onPress={handleTogglePause}
+                                color={isPaused ? colors.primary : '#F59E0B'} // Resume = Primary, Pause = Orange
+                                icon={
+                                    isPaused ? (
+                                        <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
+                                    ) : (
+                                        <Pause size={24} color="#fff" fill="#fff" />
+                                    )
+                                }
+                            />
+                            <TimerControlButton
+                                onPress={handleStop}
+                                color={colors.destructive}
+                                icon={<Square size={22} color="#fff" fill="#fff" />}
                             />
                         </View>
-                    ) : (
-                        <View style={styles.controlsColumn}>
-                            {/* Controls */}
-                            <View style={styles.controlsRow}>
-                                <TimerControlButton
-                                    onPress={handleTogglePause}
-                                    color={isPaused ? colors.primary : '#F59E0B'} // Resume = Primary, Pause = Orange
-                                    icon={
-                                        isPaused ? (
-                                            <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
-                                        ) : (
-                                            <Pause size={24} color="#fff" fill="#fff" />
-                                        )
-                                    }
-                                />
-                                <TimerControlButton
-                                    onPress={handleStop}
-                                    color={colors.destructive}
-                                    icon={<Square size={22} color="#fff" fill="#fff" />}
-                                />
-                            </View>
 
-                            {/* Info */}
-                            <View style={styles.focusingContainer}>
-                                <Text variant="muted" style={styles.focusingText}>
-                                    Currently {isPaused ? 'paused' : 'focusing'} on: <Text style={{ color: colors.primary }}>{topic}</Text>
-                                </Text>
-                                {currentFolderName && (
-                                    <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
-                                        <FolderOpen size={12} color={colors.primary} />
-                                        <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
-                                            {currentFolderName}
-                                        </Text>
-                                    </View>
-                                )}
-                            </View>
+                        {/* Info */}
+                        <View style={styles.focusingContainer}>
+                            <Text variant="muted" style={styles.focusingText}>
+                                Currently {isPaused ? 'paused' : 'focusing'} on: <Text style={{ color: colors.primary }}>{topic}</Text>
+                            </Text>
+                            {currentFolderName && (
+                                <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
+                                    <FolderOpen size={12} color={colors.primary} />
+                                    <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
+                                        {currentFolderName}
+                                    </Text>
+                                </View>
+                            )}
                         </View>
-                    )}
-                </View>
-            </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+                    </View>
+                )}
+            </View>
+        </KeyboardAvoidingView>
     );
 }
 const styles = StyleSheet.create({
