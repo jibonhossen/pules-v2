@@ -1,14 +1,13 @@
 import { useSwipeContext } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
-import { TopicItem } from './TopicItem';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { formatDuration } from '@/lib/utils';
 import type { Folder } from '@/lib/database';
-import { ChevronDown, ChevronRight, BarChart3, Trash2, Edit3, Plus } from 'lucide-react-native';
-import * as React from 'react';
+import { formatDuration } from '@/lib/utils';
 import * as Haptics from 'expo-haptics';
-import { Alert, Pressable, View, StyleSheet } from 'react-native';
+import { BarChart3, ChevronDown, ChevronRight, Edit3, Plus, Trash2 } from 'lucide-react-native';
+import * as React from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
@@ -18,6 +17,7 @@ import Animated, {
     withSpring,
     withTiming,
 } from 'react-native-reanimated';
+import { TopicItem } from './TopicItem';
 
 const ACTION_WIDTH = 140;
 
@@ -26,6 +26,7 @@ interface TopicData {
     totalTime: number;
     sessionCount: number;
     lastSession: string;
+    color?: string | null;
 }
 
 interface FolderCardProps {
@@ -227,6 +228,7 @@ export function FolderCard({
                                 totalTime={topic.totalTime}
                                 sessionCount={topic.sessionCount}
                                 lastSession={topic.lastSession}
+                                color={topic.color}
                                 onStart={() => onStartTopic(topic.topic, folder.id)}
                                 onAnalytics={onTopicAnalytics}
                                 onDelete={onDeleteTopic}

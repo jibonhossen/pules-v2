@@ -1,20 +1,20 @@
-import { create } from 'zustand';
 import {
     createSession,
     endSession,
     getAllSessions,
-    getTodaySessions,
-    getTotalFocusTime,
+    getAppState,
     getCurrentStreak,
     getFolderById,
-    recoverUnfinishedSession,
+    getTodaySessions,
     getTopicConfig,
+    getTotalFocusTime,
+    recoverUnfinishedSession,
     setAppState,
-    getAppState,
+    upsertTopicConfig,
     type Session,
 } from '@/lib/database';
+import { create } from 'zustand';
 
-import { DeviceEventEmitter } from 'react-native';
 
 interface TimerState {
     // Timer state
@@ -51,6 +51,7 @@ interface TimerState {
     // Data actions
     loadSessions: () => Promise<void>;
     loadStats: () => Promise<void>;
+    updateTopicColor: (topic: string, color: string) => Promise<void>;
 }
 
 export const useSessionStore = create<TimerState>((set, get) => ({
@@ -72,6 +73,12 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     currentStreak: 0,
 
     startTimer: async (topic: string, folderId?: number) => {
+        // If a timer is already running, stop it first to save the session
+        const currentState = get();
+        if (currentState.isRunning && currentState.currentSessionId) {
+            await get().stopTimer();
+        }
+
         const sessionId = await createSession(topic, undefined, folderId);
         let folderName = '';
         if (folderId) {
@@ -297,6 +304,13 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             getCurrentStreak(),
         ]);
         set({ totalFocusTime, currentStreak });
+    },
+
+    updateTopicColor: async (topic: string, color: string) => {
+        const { allowBackground } = await getTopicConfig(topic);
+        await upsertTopicConfig(topic, allowBackground, color);
+        // Refresh sessions to update colors
+        get().loadSessions();
     },
 }));
 

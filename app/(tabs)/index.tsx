@@ -1,14 +1,17 @@
 import { CircularTimer } from '@/components/CircularTimer';
 import { SessionList } from '@/components/SessionList';
+import { TopicColorPicker } from '@/components/TopicColorPicker';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppState } from '@/hooks/useAppState';
 import { useSessionStore } from '@/store/sessions';
 import * as Haptics from 'expo-haptics';
-import { FolderOpen, MoonStar, Pause, Play, Square, Sun } from 'lucide-react-native';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { FolderOpen, MoonStar, Palette, Pause, Play, Square, Sun } from 'lucide-react-native';
 import * as React from 'react';
 import {
+    Alert,
     Keyboard,
     KeyboardAvoidingView,
     Platform,
@@ -154,12 +157,21 @@ function TimerControlButton({
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 export default function TimerScreen() {
+    const router = useRouter(); // Added router
+    const params = useLocalSearchParams();
+    React.useEffect(() => {
+        if (params.mode === 'focus') {
+            setViewMode('focus');
+        }
+    }, [params.mode, params.t]);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const insets = useSafeAreaInsets();
 
     const [viewMode, setViewMode] = React.useState<ViewMode>('focus');
     const [topic, setTopic] = React.useState('');
+    const [colorPickerVisible, setColorPickerVisible] = React.useState(false);
+    const [topicColor, setTopicColor] = React.useState<string | null>(null);
 
     const {
         isRunning,
@@ -174,6 +186,7 @@ export default function TimerScreen() {
         tick,
         loadSessions,
         loadStats,
+        updateTopicColor,
         onAppBackground,
         onAppForeground,
     } = useSessionStore();
@@ -207,6 +220,24 @@ export default function TimerScreen() {
 
     const handleStart = async () => {
         if (topic.trim()) {
+            if (isRunning) {
+                Alert.alert(
+                    'Start New Session?',
+                    `"${currentTopic}" is currently running. Save it and start "${topic}"?`,
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Start',
+                            style: 'default',
+                            onPress: async () => {
+                                await startTimer(topic.trim());
+                                Keyboard.dismiss();
+                            },
+                        },
+                    ]
+                );
+                return;
+            }
             await startTimer(topic.trim());
             Keyboard.dismiss();
         }
@@ -226,9 +257,30 @@ export default function TimerScreen() {
     };
 
     const handleContinueSession = async (sessionTopic: string, folderId: number | null) => {
+        if (isRunning) {
+            Alert.alert(
+                'Start New Session?',
+                `"${currentTopic}" is currently running. Save it and start "${sessionTopic}"?`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Start',
+                        style: 'default',
+                        onPress: async () => {
+                            // Force update params to trigger the useEffect that switches mode
+                            router.setParams({ mode: 'focus', t: Date.now().toString() });
+                            setTopic(sessionTopic);
+                            await startTimer(sessionTopic, folderId ?? undefined);
+                        },
+                    },
+                ]
+            );
+            return;
+        }
+        // Force update params to trigger the useEffect that switches mode
+        router.setParams({ mode: 'focus', t: Date.now().toString() });
         setTopic(sessionTopic);
         await startTimer(sessionTopic, folderId ?? undefined);
-        setViewMode('focus');
     };
 
     return (
@@ -280,6 +332,19 @@ export default function TimerScreen() {
                                 style={[styles.input, { color: colors.foreground }]}
                             />
                         </View>
+                        <Pressable
+                            onPress={() => setColorPickerVisible(true)}
+                            style={{
+                                width: 44,
+                                height: 52,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: colors.card,
+                                borderRadius: 16,
+                            }}
+                        >
+                            <Palette size={20} color={topicColor || colors.mutedForeground} />
+                        </Pressable>
                         <TimerControlButton
                             onPress={handleStart}
                             disabled={!topic.trim()}
@@ -326,6 +391,17 @@ export default function TimerScreen() {
                     </View>
                 )}
             </View>
+            <TopicColorPicker
+                visible={colorPickerVisible}
+                onClose={() => setColorPickerVisible(false)}
+                onSelect={(color) => {
+                    setTopicColor(color); // Local feedback
+                    if (topic.trim()) {
+                        updateTopicColor(topic.trim(), color);
+                    }
+                }}
+                selectedColor={topicColor}
+            />
         </KeyboardAvoidingView>
     );
 }
@@ -408,6 +484,7 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontSize: 16,
+        fontFamily: 'Poppins_400Regular',
     },
     playButton: {
         width: 56,

@@ -1,35 +1,35 @@
-import { FolderCard, CreateFolderModal, AddTopicModal, SelectFolderModal, TopicItem, RenameTopicModal } from '@/components/folders';
+import { AddTopicModal, CreateFolderModal, FolderCard, RenameTopicModal, SelectFolderModal, TopicItem } from '@/components/folders';
 import { SwipeProvider } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import {
-    getFolders,
     createFolder,
-    updateFolder,
+    createTopicInFolder,
     deleteFolder,
+    deleteTopic,
+    getFolders,
+    getFolderStats,
     getTopicsByFolder,
     getUnfolderedTopics,
-    getFolderStats,
     moveTopicToFolder,
-    createTopicInFolder,
-    deleteTopic,
     renameAllSessionsWithTopic,
+    updateFolder,
     upsertTopicConfig,
     type Folder,
 } from '@/lib/database';
 import { useSessionStore } from '@/store/sessions';
-import { useRouter } from 'expo-router';
-import { Plus, FolderOpen } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
+import { useRouter } from 'expo-router';
+import { FolderOpen, Plus } from 'lucide-react-native';
+import * as React from 'react';
 import {
+    Alert,
+    Pressable,
     RefreshControl,
     ScrollView,
-    Pressable,
-    View,
     StyleSheet,
-    Alert,
+    View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -38,6 +38,7 @@ interface TopicData {
     totalTime: number;
     sessionCount: number;
     lastSession: string;
+    color?: string | null;
 }
 
 interface FolderWithData extends Folder {
@@ -49,7 +50,7 @@ export default function FoldersScreen() {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const router = useRouter();
-    const { startTimer } = useSessionStore();
+    const { startTimer, isRunning, currentTopic } = useSessionStore();
 
     const [folders, setFolders] = React.useState<FolderWithData[]>([]);
     const [unfolderedTopics, setUnfolderedTopics] = React.useState<TopicData[]>([]);
@@ -66,6 +67,7 @@ export default function FoldersScreen() {
     const loadData = React.useCallback(async () => {
         try {
             const allFolders = await getFolders();
+            if (!allFolders) return;
             const foldersWithData: FolderWithData[] = await Promise.all(
                 allFolders.map(async (folder) => {
                     const topics = await getTopicsByFolder(folder.id);
@@ -134,8 +136,26 @@ export default function FoldersScreen() {
     };
 
     const handleStartTopic = async (topic: string, folderId?: number) => {
+        if (isRunning) {
+            Alert.alert(
+                'Start New Session?',
+                `"${currentTopic}" is currently running. Save it and start "${topic}"?`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Start',
+                        style: 'default',
+                        onPress: async () => {
+                            await startTimer(topic, folderId);
+                            router.push(`/?mode=focus&t=${Date.now()}`);
+                        },
+                    },
+                ]
+            );
+            return;
+        }
         await startTimer(topic, folderId);
-        router.push('/');
+        router.push(`/?mode=focus&t=${Date.now()}`);
     };
 
     const handleTopicAnalytics = (topic: string) => {
@@ -152,10 +172,10 @@ export default function FoldersScreen() {
         setAddTopicModalVisible(true);
     };
 
-    const handleSaveNewTopic = async (topicName: string, allowBackground: boolean) => {
+    const handleSaveNewTopic = async (topicName: string, allowBackground: boolean, color: string) => {
         if (selectedFolderForTopic && topicName.trim()) {
             await createTopicInFolder(topicName.trim(), selectedFolderForTopic.id);
-            await upsertTopicConfig(topicName.trim(), allowBackground);
+            await upsertTopicConfig(topicName.trim(), allowBackground, color); // Updated args
             setAddTopicModalVisible(false);
             loadData(); // Reload to show the new topic
         }
@@ -225,13 +245,7 @@ export default function FoldersScreen() {
                     style={styles.scrollView}
                     contentContainerStyle={styles.scrollContent}
                     keyboardShouldPersistTaps="handled"
-                    onScrollBeginDrag={() => {
-                        // We can't access context here easily without hook.
-                        // But TopicItem/FolderCard could listen to scroll?
-                        // Actually, ScrollView interaction naturally intercepts?
-                        // Let's rely on `exclusive` swipe for "other topic" touches.
-                        // For empty space touches, the user might expect it to close.
-                    }}
+
                     refreshControl={
                         <RefreshControl
                             refreshing={refreshing}
@@ -293,6 +307,7 @@ export default function FoldersScreen() {
                                                 totalTime={topic.totalTime}
                                                 sessionCount={topic.sessionCount}
                                                 lastSession={topic.lastSession}
+                                                color={topic.color}
                                                 onStart={handleStartTopic}
                                                 onAnalytics={handleTopicAnalytics}
                                                 onDelete={handleDeleteTopic}

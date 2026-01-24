@@ -159,9 +159,14 @@ function SwipeableSessionCard({
                 >
                     <View style={styles.cardContent}>
                         <View style={styles.cardLeft}>
-                            <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
-                                {session.topic || 'Untitled Session'}
-                            </Text>
+                            <View style={{ flexDirection: 'row', alignItems: 'center', gap: 8 }}>
+                                {session.topic_color && (
+                                    <View style={{ width: 8, height: 8, borderRadius: 4, backgroundColor: session.topic_color }} />
+                                )}
+                                <Text style={[styles.cardTitle, { color: colors.foreground }]} numberOfLines={1}>
+                                    {session.topic || 'Untitled Session'}
+                                </Text>
+                            </View>
                             <Text variant="muted" style={styles.cardTime}>
                                 {formatTime(session.start_time)}
                                 {session.end_time && ` - ${formatTime(session.end_time)}`}
@@ -354,13 +359,13 @@ function SessionHistorySheet({
                         {group.sessions.map((session) => (
                             <View
                                 key={session.id}
-                                style={[styles.sessionItem, { backgroundColor: colors.card }]}
+                                style={[styles.sessionItem, { backgroundColor: colors.card, borderLeftColor: session.topic_color || colors.primary, borderLeftWidth: session.topic_color ? 4 : 0 }]}
                             >
                                 <Text style={{ color: colors.foreground, fontSize: 14 }}>
                                     {formatTime(session.start_time)}
                                     {session.end_time && ` - ${formatTime(session.end_time)}`}
                                 </Text>
-                                <Text style={[styles.sessionDuration, { color: colors.primary }]}>
+                                <Text style={[styles.sessionDuration, { color: session.topic_color || colors.primary }]}>
                                     {formatDuration(session.duration_seconds)}
                                 </Text>
                             </View>

@@ -21,6 +21,7 @@ export interface Session {
     folder_name?: string | null;
     folder_color?: string | null;
     folder_icon?: string | null;
+    topic_color?: string | null;
 }
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
@@ -65,7 +66,8 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
         -- Create topic_configs table
         CREATE TABLE IF NOT EXISTS topic_configs (
           topic TEXT PRIMARY KEY,
-          allow_background INTEGER DEFAULT 0
+          allow_background INTEGER DEFAULT 0,
+          color TEXT
         );
       `);
 
@@ -75,6 +77,15 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
         } catch (e) {
             // Column already exists, ignore
         }
+
+        // Try to add color column to topic_configs if it doesn't exist
+        try {
+            await db.execAsync(`ALTER TABLE topic_configs ADD COLUMN color TEXT;`);
+        } catch (e) {
+            // Column already exists, ignore
+        }
+
+
 
         return db;
     })();
@@ -134,9 +145,11 @@ export async function endSession(id: number): Promise<void> {
 export async function getAllSessions(): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
          FROM sessions 
          LEFT JOIN folders ON sessions.folder_id = folders.id 
+         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
+         WHERE duration_seconds > 0
          ORDER BY start_time DESC`
     );
 }
@@ -147,10 +160,11 @@ export async function getSessionsByDateRange(
 ): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
          FROM sessions 
          LEFT JOIN folders ON sessions.folder_id = folders.id 
-         WHERE start_time >= ? AND start_time <= ? 
+         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
+         WHERE start_time >= ? AND start_time <= ? AND duration_seconds > 0
          ORDER BY start_time DESC`,
         [startDate, endDate]
     );
@@ -227,10 +241,11 @@ export async function getCurrentStreak(): Promise<number> {
 export async function getSessionsByTopic(topic: string): Promise<Session[]> {
     const database = await getDatabase();
     return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon 
+        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
          FROM sessions 
          LEFT JOIN folders ON sessions.folder_id = folders.id 
-         WHERE topic = ? 
+         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
+         WHERE sessions.topic = ? AND duration_seconds > 0
          ORDER BY start_time DESC`,
         [topic]
     );
@@ -318,15 +333,17 @@ export async function createTopicInFolder(topic: string, folderId: number): Prom
 // Get unique topics for a folder
 export async function getTopicsByFolder(folderId: number): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }[]> {
     const database = await getDatabase();
-    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }>(
+    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }>(
         `SELECT 
-            topic,
+            sessions.topic,
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(CASE WHEN duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(start_time) as lastSession
+            MAX(start_time) as lastSession,
+            topic_configs.color
         FROM sessions 
+        LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
         WHERE folder_id = ? AND end_time IS NOT NULL
-        GROUP BY topic
+        GROUP BY sessions.topic, topic_configs.color
         ORDER BY lastSession DESC`,
         [folderId]
     );
@@ -335,15 +352,17 @@ export async function getTopicsByFolder(folderId: number): Promise<{ topic: stri
 // Get topics without a folder
 export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }[]> {
     const database = await getDatabase();
-    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }>(
+    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }>(
         `SELECT 
-            topic,
+            sessions.topic,
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(CASE WHEN duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(start_time) as lastSession
+            MAX(start_time) as lastSession,
+            topic_configs.color
         FROM sessions 
+        LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
         WHERE folder_id IS NULL AND end_time IS NOT NULL
-        GROUP BY topic
+        GROUP BY sessions.topic, topic_configs.color
         ORDER BY lastSession DESC`
     );
 }
@@ -571,21 +590,26 @@ export async function getAppState(key: string): Promise<string | null> {
 
 // ==================== TOPIC CONFIGS ====================
 
-export async function upsertTopicConfig(topic: string, allowBackground: boolean): Promise<void> {
+export async function upsertTopicConfig(topic: string, allowBackground: boolean, color?: string): Promise<void> {
     const database = await getDatabase();
+
+    // Check existing config to preserve values if not provided
+    const existing = await getTopicConfig(topic);
+    const newColor = color !== undefined ? color : existing.color;
+
     await database.runAsync(
-        'INSERT OR REPLACE INTO topic_configs (topic, allow_background) VALUES (?, ?)',
-        [topic, allowBackground ? 1 : 0]
+        'INSERT OR REPLACE INTO topic_configs (topic, allow_background, color) VALUES (?, ?, ?)',
+        [topic, allowBackground ? 1 : 0, newColor || null]
     );
 }
 
-export async function getTopicConfig(topic: string): Promise<{ allowBackground: boolean }> {
+export async function getTopicConfig(topic: string): Promise<{ allowBackground: boolean; color: string | null }> {
     const database = await getDatabase();
-    const result = await database.getFirstAsync<{ allow_background: number }>(
-        'SELECT allow_background FROM topic_configs WHERE topic = ?',
+    const result = await database.getFirstAsync<{ allow_background: number; color: string | null }>(
+        'SELECT allow_background, color FROM topic_configs WHERE topic = ?',
         [topic]
     );
-    return { allowBackground: !!result?.allow_background };
+    return { allowBackground: !!result?.allow_background, color: result?.color || null };
 }
 
 export async function recoverUnfinishedSession(): Promise<boolean> {

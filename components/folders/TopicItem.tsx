@@ -3,10 +3,10 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration } from '@/lib/utils';
-import { Play, FolderInput, BarChart3, Edit3 } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { BarChart3, Edit3, FolderInput, Play } from 'lucide-react-native';
+import * as React from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
@@ -24,6 +24,7 @@ interface TopicItemProps {
     totalTime: number;
     sessionCount: number;
     lastSession: string;
+    color?: string | null;
     onStart: (topic: string) => void;
     onAnalytics: (topic: string) => void;
     onDelete: (topic: string) => void;
@@ -36,6 +37,7 @@ export function TopicItem({
     totalTime,
     sessionCount,
     lastSession,
+    color,
     onStart,
     onAnalytics,
     onDelete,
@@ -157,8 +159,8 @@ export function TopicItem({
                         { backgroundColor: colors.muted },
                     ]}
                 >
-                    <View style={styles.playIcon}>
-                        <Play size={14} color={colors.primary} fill={colors.primary} />
+                    <View style={[styles.playIcon, { backgroundColor: color ? `${color}20` : 'rgba(20, 184, 166, 0.15)' }]}>
+                        <Play size={14} color={color || colors.primary} fill={color || colors.primary} />
                     </View>
                     <View style={styles.content}>
                         <Text style={[styles.topicName, { color: colors.foreground }]} numberOfLines={1}>
