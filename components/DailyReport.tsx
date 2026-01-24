@@ -22,7 +22,9 @@ interface DailyReportProps {
 export function DailyReport({ data, label, onPrev, onNext, canGoNext, mode, days }: DailyReportProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-    const todayStr = new Date().toISOString().split('T')[0];
+    const today = new Date();
+    const offset = today.getTimezoneOffset() * 60000;
+    const todayStr = new Date(today.getTime() - offset).toISOString().split('T')[0];
 
     const dailyHours = days.map((d) => {
         const seconds = data.get(d.dateStr) || 0;

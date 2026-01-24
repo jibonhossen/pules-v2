@@ -5,7 +5,7 @@ import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppState } from '@/hooks/useAppState';
 import { useSessionStore } from '@/store/sessions';
-import { MoonStar, Play, Square, Sun, FolderOpen } from 'lucide-react-native';
+import { MoonStar, Play, Square, Sun, FolderOpen, Pause } from 'lucide-react-native';
 import * as React from 'react';
 import * as Haptics from 'expo-haptics';
 import {
@@ -98,17 +98,19 @@ function ThemeToggle() {
     );
 }
 
-function PlayButton({
-    isRunning,
+function TimerControlButton({
     onPress,
     disabled,
+    icon,
+    color,
+    style,
 }: {
-    isRunning: boolean;
     onPress: () => void;
     disabled?: boolean;
+    icon: React.ReactNode;
+    color: string;
+    style?: any;
 }) {
-    const { colorScheme } = useColorScheme();
-    const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const scale = useSharedValue(1);
 
     const animatedStyle = useAnimatedStyle(() => ({
@@ -124,9 +126,7 @@ function PlayButton({
     };
 
     const handlePress = () => {
-        Haptics.impactAsync(
-            isRunning ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium
-        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onPress();
     };
 
@@ -140,17 +140,14 @@ function PlayButton({
                 animatedStyle,
                 styles.playButton,
                 {
-                    backgroundColor: isRunning ? colors.destructive : colors.primary,
-                    shadowColor: isRunning ? colors.destructive : colors.primary,
-                    opacity: disabled && !isRunning ? 0.5 : 1,
+                    backgroundColor: color,
+                    shadowColor: color,
+                    opacity: disabled ? 0.5 : 1,
                 },
+                style
             ]}
         >
-            {isRunning ? (
-                <Square size={22} color="#fff" fill="#fff" />
-            ) : (
-                <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
-            )}
+            {icon}
         </AnimatedPressable>
     );
 }
@@ -167,11 +164,14 @@ export default function TimerScreen() {
 
     const {
         isRunning,
+        isPaused,
         elapsedSeconds,
         currentTopic,
         currentFolderName,
         startTimer,
         stopTimer,
+        pauseTimer,
+        resumeTimer,
         tick,
         loadSessions,
         loadStats,
@@ -179,19 +179,19 @@ export default function TimerScreen() {
         onAppForeground,
     } = useSessionStore();
 
-    // Handle app state changes - pause on background, resume on foreground
+    // Handle app state changes
     useAppState(onAppBackground, onAppForeground);
 
     // Timer tick effect
     React.useEffect(() => {
         let interval: ReturnType<typeof setInterval> | undefined;
-        if (isRunning) {
+        if (isRunning && !isPaused) {
             interval = setInterval(tick, 1000);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isRunning, tick]);
+    }, [isRunning, isPaused, tick]);
 
     // Load data on mount
     React.useEffect(() => {
@@ -199,20 +199,30 @@ export default function TimerScreen() {
         loadStats();
     }, []);
 
-    // Sync local topic with store's currentTopic
+    // Sync local topic
     React.useEffect(() => {
         if (currentTopic && isRunning) {
             setTopic(currentTopic);
         }
     }, [currentTopic, isRunning]);
 
-    const handlePlayPress = async () => {
-        if (isRunning) {
-            await stopTimer();
-            setTopic('');
-        } else if (topic.trim()) {
+    const handleStart = async () => {
+        if (topic.trim()) {
             await startTimer(topic.trim());
             Keyboard.dismiss();
+        }
+    };
+
+    const handleStop = async () => {
+        await stopTimer();
+        setTopic('');
+    };
+
+    const handleTogglePause = () => {
+        if (isPaused) {
+            resumeTimer();
+        } else {
+            pauseTimer();
         }
     };
 
@@ -261,36 +271,60 @@ export default function TimerScreen() {
 
                 {/* Input Section */}
                 <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
-                    <View style={styles.inputRow}>
-                        <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
-                            <TextInput
-                                placeholder="I'm working on..."
-                                placeholderTextColor={colors.mutedForeground}
-                                value={topic}
-                                onChangeText={setTopic}
-                                editable={!isRunning}
-                                style={[styles.input, { color: colors.foreground }]}
+                    {!isRunning ? (
+                        <View style={styles.inputRow}>
+                            <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
+                                <TextInput
+                                    placeholder="I'm working on..."
+                                    placeholderTextColor={colors.mutedForeground}
+                                    value={topic}
+                                    onChangeText={setTopic}
+                                    style={[styles.input, { color: colors.foreground }]}
+                                />
+                            </View>
+                            <TimerControlButton
+                                onPress={handleStart}
+                                disabled={!topic.trim()}
+                                color={colors.primary}
+                                icon={<Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />}
                             />
                         </View>
-                        <PlayButton
-                            isRunning={isRunning}
-                            onPress={handlePlayPress}
-                            disabled={!topic.trim() && !isRunning}
-                        />
-                    </View>
-                    {isRunning && (
-                        <View style={styles.focusingContainer}>
-                            <Text variant="muted" style={styles.focusingText}>
-                                Focusing on: <Text style={{ color: colors.primary }}>{topic}</Text>
-                            </Text>
-                            {currentFolderName && (
-                                <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
-                                    <FolderOpen size={12} color={colors.primary} />
-                                    <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
-                                        {currentFolderName}
-                                    </Text>
-                                </View>
-                            )}
+                    ) : (
+                        <View style={styles.controlsColumn}>
+                            {/* Controls */}
+                            <View style={styles.controlsRow}>
+                                <TimerControlButton
+                                    onPress={handleTogglePause}
+                                    color={isPaused ? colors.primary : '#F59E0B'} // Resume = Primary, Pause = Orange
+                                    icon={
+                                        isPaused ? (
+                                            <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
+                                        ) : (
+                                            <Pause size={24} color="#fff" fill="#fff" />
+                                        )
+                                    }
+                                />
+                                <TimerControlButton
+                                    onPress={handleStop}
+                                    color={colors.destructive}
+                                    icon={<Square size={22} color="#fff" fill="#fff" />}
+                                />
+                            </View>
+
+                            {/* Info */}
+                            <View style={styles.focusingContainer}>
+                                <Text variant="muted" style={styles.focusingText}>
+                                    Currently {isPaused ? 'paused' : 'focusing'} on: <Text style={{ color: colors.primary }}>{topic}</Text>
+                                </Text>
+                                {currentFolderName && (
+                                    <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
+                                        <FolderOpen size={12} color={colors.primary} />
+                                        <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
+                                            {currentFolderName}
+                                        </Text>
+                                    </View>
+                                )}
+                            </View>
                         </View>
                     )}
                 </View>
@@ -298,7 +332,6 @@ export default function TimerScreen() {
         </TouchableWithoutFeedback>
     );
 }
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -409,5 +442,16 @@ const styles = StyleSheet.create({
     folderBadgeText: {
         fontSize: 12,
         fontWeight: '600',
+    },
+    controlsColumn: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    controlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 32,
+        marginBottom: 8,
     },
 });

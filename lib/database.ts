@@ -51,6 +51,18 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
           end_time TEXT,
           duration_seconds INTEGER DEFAULT 0
         );
+
+        -- Create app_state table for persistence
+        CREATE TABLE IF NOT EXISTS app_state (
+          key TEXT PRIMARY KEY,
+          value TEXT NOT NULL
+        );
+
+        -- Create topic_configs table
+        CREATE TABLE IF NOT EXISTS topic_configs (
+          topic TEXT PRIMARY KEY,
+          allow_background INTEGER DEFAULT 0
+        );
       `);
 
         // Try to add folder_id column if it doesn't exist (for existing databases)
@@ -160,9 +172,13 @@ export async function getDailyStats(days: number = 30): Promise<Map<string, numb
     const dailyMap = new Map<string, number>();
 
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        // Convert to local date string YYYY-MM-DD
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
 
     return dailyMap;
@@ -184,7 +200,9 @@ export async function getCurrentStreak(): Promise<number> {
     for (let i = 0; i < 365; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        const dateStr = date.toISOString().split('T')[0];
+        // Correct local date string logic
+        const offset = date.getTimezoneOffset() * 60000;
+        const dateStr = new Date(date.getTime() - offset).toISOString().split('T')[0];
 
         if (dailyStats.has(dateStr) && (dailyStats.get(dateStr) || 0) > 0) {
             streak++;
@@ -373,9 +391,12 @@ export async function getTopicDailyStats(topic: string, days: number = 30): Prom
     const dailyMap = new Map<string, number>();
 
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
 
     return dailyMap;
@@ -399,9 +420,12 @@ export async function getTopicDailyStatsForRange(topic: string, startDate: strin
     const dailyMap = new Map<string, number>();
 
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
 
     return dailyMap;
@@ -420,9 +444,12 @@ export async function getFolderDailyStatsForRange(folderId: number, startDate: s
     const dailyMap = new Map<string, number>();
 
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
 
     return dailyMap;
@@ -445,9 +472,12 @@ export async function getFolderDailyStats(folderId: number, days: number = 30): 
     const dailyMap = new Map<string, number>();
 
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
 
     return dailyMap;
@@ -505,4 +535,91 @@ export async function getStatsForRange(startDate: string, endDate: string): Prom
         [startDate, endDate]
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
+}
+
+// ==================== APP STATE & RECOVERY ====================
+
+export async function setAppState(key: string, value: string): Promise<void> {
+    const database = await getDatabase();
+    await database.runAsync(
+        'INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)',
+        [key, value]
+    );
+}
+
+export async function getAppState(key: string): Promise<string | null> {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync<{ value: string }>(
+        'SELECT value FROM app_state WHERE key = ?',
+        [key]
+    );
+    return result?.value || null;
+}
+
+// ==================== TOPIC CONFIGS ====================
+
+export async function upsertTopicConfig(topic: string, allowBackground: boolean): Promise<void> {
+    const database = await getDatabase();
+    await database.runAsync(
+        'INSERT OR REPLACE INTO topic_configs (topic, allow_background) VALUES (?, ?)',
+        [topic, allowBackground ? 1 : 0]
+    );
+}
+
+export async function getTopicConfig(topic: string): Promise<{ allowBackground: boolean }> {
+    const database = await getDatabase();
+    const result = await database.getFirstAsync<{ allow_background: number }>(
+        'SELECT allow_background FROM topic_configs WHERE topic = ?',
+        [topic]
+    );
+    return { allowBackground: !!result?.allow_background };
+}
+
+export async function recoverUnfinishedSession(): Promise<boolean> {
+    const database = await getDatabase();
+    // Find any session that has no end_time
+    const unfinishedSession = await database.getFirstAsync<Session>(
+        'SELECT * FROM sessions WHERE end_time IS NULL ORDER BY start_time DESC LIMIT 1'
+    );
+
+    if (unfinishedSession) {
+        // We found a session that wasn't closed properly.
+        // We will forcefully close it using the last known active timestamp if available,
+        // or just close it with a reasonable fallback (e.g., +1 minute from start if completely unknown? 
+        // Or better: check if we have a saved 'last_active_timestamp').
+
+        try {
+            const lastActiveStr = await getAppState('last_active_timestamp');
+            let endTimeStr = new Date().toISOString();
+
+            if (lastActiveStr) {
+                // Use the last active time as the end time
+                endTimeStr = new Date(parseInt(lastActiveStr)).toISOString();
+            } else {
+                // If no last active time, this is tricky. We might just use current time 
+                // BUT that would mean the user gets "credit" for time they weren't actually in app 
+                // if they just killed it.
+                // However, without background fetch, we can't know when they killed it.
+                // Best effort: Use a small buffer from start or simply close it at start time (0 duration)
+                // to avoid cheating.
+                // FOR NOW: Let's assume valid session until 'last known time'.
+                // If last known time is missing, maybe default to start_time to be safe?
+                endTimeStr = unfinishedSession.start_time; // 0 duration
+            }
+
+            const start = new Date(unfinishedSession.start_time).getTime();
+            const end = new Date(endTimeStr).getTime();
+            // Ensure non-negative
+            const durationSeconds = Math.max(0, Math.floor((end - start) / 1000));
+
+            await database.runAsync(
+                'UPDATE sessions SET end_time = ?, duration_seconds = ? WHERE id = ?',
+                [endTimeStr, durationSeconds, unfinishedSession.id]
+            );
+            return true;
+        } catch (e) {
+            console.error("Failed to recover session", e);
+        }
+    }
+    return false;
 }

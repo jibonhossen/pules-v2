@@ -15,6 +15,7 @@ import {
     createTopicInFolder,
     deleteTopic,
     renameAllSessionsWithTopic,
+    upsertTopicConfig,
     type Folder,
 } from '@/lib/database';
 import { useSessionStore } from '@/store/sessions';
@@ -151,9 +152,10 @@ export default function FoldersScreen() {
         setAddTopicModalVisible(true);
     };
 
-    const handleSaveNewTopic = async (topicName: string) => {
+    const handleSaveNewTopic = async (topicName: string, allowBackground: boolean) => {
         if (selectedFolderForTopic && topicName.trim()) {
             await createTopicInFolder(topicName.trim(), selectedFolderForTopic.id);
+            await upsertTopicConfig(topicName.trim(), allowBackground);
             setAddTopicModalVisible(false);
             loadData(); // Reload to show the new topic
         }

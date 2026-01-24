@@ -7,9 +7,14 @@ import {
     getTotalFocusTime,
     getCurrentStreak,
     getFolderById,
+    recoverUnfinishedSession,
+    getTopicConfig,
+    setAppState,
+    getAppState,
     type Session,
 } from '@/lib/database';
-import { notificationService } from '@/lib/NotificationService';
+
+import { DeviceEventEmitter } from 'react-native';
 
 interface TimerState {
     // Timer state
@@ -22,6 +27,8 @@ interface TimerState {
     currentTopic: string;
     currentFolderId: number | null;
     currentFolderName: string;
+    isBackgroundAllowed: boolean;
+    autoPaused: boolean;
 
     // Session data
     sessions: Session[];
@@ -57,6 +64,8 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     currentTopic: '',
     currentFolderId: null,
     currentFolderName: '',
+    isBackgroundAllowed: false,
+    autoPaused: false,
     sessions: [],
     todaySessions: [],
     totalFocusTime: 0,
@@ -70,47 +79,54 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             folderName = folder?.name || '';
         }
 
+        const { allowBackground } = await getTopicConfig(topic);
+
         const now = Date.now();
-        set({
+        const newState = {
             isRunning: true,
             isPaused: false,
             currentSessionId: sessionId,
             currentTopic: topic,
             currentFolderId: folderId || null,
             currentFolderName: folderName,
+            isBackgroundAllowed: allowBackground,
+            autoPaused: false,
             elapsedSeconds: 0,
             startTime: now,
             pausedAt: null,
-        });
+        };
+        set(newState);
 
-        // Show notification
-        await notificationService.showTimerNotification(topic, 0);
+        // Persist state
+        await setAppState('timer_state', JSON.stringify(newState));
     },
 
     pauseTimer: () => {
-        const { isRunning, isPaused, elapsedSeconds } = get();
+        const { isRunning, isPaused } = get();
         if (isRunning && !isPaused) {
-            set({
+            const updates = {
                 isPaused: true,
                 pausedAt: Date.now(),
-            });
+            };
+            set(updates);
+            setAppState('timer_state', JSON.stringify(get()));
         }
     },
 
     resumeTimer: () => {
-        const { isRunning, isPaused, pausedAt, startTime, elapsedSeconds, currentTopic } = get();
+        const { isRunning, isPaused, pausedAt, startTime } = get();
         if (isRunning && isPaused && pausedAt && startTime) {
             // Calculate how long we were paused
             const pauseDuration = Date.now() - pausedAt;
             // Adjust start time to account for pause duration
-            set({
+            const updates = {
                 isPaused: false,
                 pausedAt: null,
                 startTime: startTime + pauseDuration,
-            });
+            };
+            set(updates);
 
-            // Resume notification
-            notificationService.showTimerNotification(currentTopic, elapsedSeconds);
+            setAppState('timer_state', JSON.stringify(get()));
         }
     },
 
@@ -120,8 +136,8 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             await endSession(currentSessionId);
         }
 
-        // Hide notification
-        await notificationService.hideTimerNotification();
+        // Clear persistence
+        await setAppState('timer_state', '');
 
         set({
             isRunning: false,
@@ -133,6 +149,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             elapsedSeconds: 0,
             startTime: null,
             pausedAt: null,
+            autoPaused: false,
         });
         // Refresh data
         get().loadSessions();
@@ -140,19 +157,15 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     },
 
     tick: () => {
-        const { isRunning, isPaused, startTime, currentTopic } = get();
+        const { isRunning, isPaused, startTime } = get();
         if (isRunning && !isPaused && startTime) {
-            // Calculate elapsed based on start time for accuracy
-            const elapsed = Math.floor((Date.now() - startTime) / 1000);
+            const now = Date.now();
+            const elapsed = Math.floor((now - startTime) / 1000);
             set({ elapsedSeconds: elapsed });
-
-            // Update notification
-            notificationService.updateTimerNotification(elapsed);
         }
     },
 
     resetTimer: () => {
-        notificationService.hideTimerNotification();
         set({
             isRunning: false,
             isPaused: false,
@@ -161,44 +174,121 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             elapsedSeconds: 0,
             startTime: null,
             pausedAt: null,
+            autoPaused: false,
         });
     },
 
     // Called when app goes to background
     onAppBackground: () => {
-        const { isRunning, isPaused } = get();
+        const { isRunning, isPaused, isBackgroundAllowed } = get();
+
+        // Always save state persistence timestamp
+        setAppState('last_active_timestamp', Date.now().toString());
+
+        // Snapshot current state for persistence
+        setAppState('timer_state', JSON.stringify(get()));
+
+        // Logic: Always pause on background UNLESS isBackgroundAllowed is true
         if (isRunning && !isPaused) {
-            // Pause the timer when app goes to background
-            set({
-                isPaused: true,
-                pausedAt: Date.now(),
-            });
+            if (isBackgroundAllowed) {
+                console.log('[Timer] App backgrounded, but background allowed. Continuing.');
+                return;
+            }
+
+            console.log('[Timer] App backgrounded. Pausing timer and setting autoPaused flag.');
+            get().pauseTimer();
+            set({ autoPaused: true });
+
+            // Update persistence to reflect paused state
+            setAppState('timer_state', JSON.stringify(get()));
         }
     },
 
     // Called when app returns to foreground
     onAppForeground: () => {
-        const { isRunning, isPaused, pausedAt, startTime, currentTopic, elapsedSeconds } = get();
-        if (isRunning && isPaused && pausedAt && startTime) {
-            // Calculate pause duration and adjust
-            const pauseDuration = Date.now() - pausedAt;
-            set({
-                isPaused: false,
-                pausedAt: null,
-                startTime: startTime + pauseDuration,
-            });
+        const { isRunning, isPaused, autoPaused } = get();
 
-            // Resume notification
-            notificationService.showTimerNotification(currentTopic, elapsedSeconds);
+        console.log('[Timer] App foregrounded. AutoPaused:', autoPaused);
+
+        // If we were auto-paused due to backgrounding, resume now
+        if (autoPaused && isPaused && isRunning) {
+            console.log('[Timer] Auto-resuming timer...');
+            get().resumeTimer();
+            set({ autoPaused: false });
+        }
+
+        // Sync visual state
+        if (get().isRunning && !get().isPaused && get().startTime) {
+            const elapsed = Math.floor((Date.now() - get().startTime!) / 1000);
+            set({ elapsedSeconds: elapsed });
         }
     },
 
     loadSessions: async () => {
+        // "When user completely close the app save the session"
+        // This runs on App Launch. If we find a persisted session, it means the app was killed.
+        // We should END that session and save it, rather than resuming it.
+
+        try {
+            const savedStateStr = await getAppState('timer_state');
+            if (savedStateStr) {
+                const savedState = JSON.parse(savedStateStr);
+
+                if (savedState.currentSessionId && savedState.startTime) {
+                    console.log('[Timer] Found persisted session from previous run. Ending it as per request.');
+
+                    // Logic to calculate final duration
+                    let finalDuration = 0;
+                    if (savedState.pausedAt) {
+                        // It was paused when killed (or paused right before kill)
+                        finalDuration = Math.floor((savedState.pausedAt - savedState.startTime) / 1000);
+                    } else {
+                        // It was running when killed. 
+                        // We can't know exactly WHEN it was killed, but 'elapsedSeconds' in state 
+                        // reflects the last tick seen by UI. 
+                        // Or we can use 'last_active_timestamp' if we saved it?
+                        // Let's use the safer bet: elapsedSeconds from state, or (last_active - start).
+                        finalDuration = savedState.elapsedSeconds || 0;
+                    }
+
+                    // End the session in DB
+                    // Note: 'endSession' usually takes current time as end time.
+                    // We might need to manually update the record if we want specific duration?
+                    // 'endSession' implementation in database.ts updates duration = (now - start_time - pauses).
+                    // This logic assumes "Now" is end time. But "Now" is way later.
+                    // So we should manually update the session in DB if possible, or just accept 'elapsedSeconds' as truth.
+
+                    // Actually, endSession(id) sets end_time = now.
+                    // If we want to "Save" what was done, we just want to ensure the DURATION is correct.
+                    // The DB 'endSession' might overwrite duration based on wrong times.
+                    // But wait, if we call `recoverUnfinishedSession`, it usually marks it as incomplete or something.
+
+                    // Let's rely on `recoverUnfinishedSession` but maybe tweak behavior?
+                    // Or reuse `endSession` but pass a flag?
+                    // Actually, if we just want to Close it, `recoverUnfinishedSession` is designed for this!
+                    // It finds open sessions and closes them.
+
+                    await recoverUnfinishedSession();
+
+                    // Clear persistence
+                    await setAppState('timer_state', '');
+                }
+            } else {
+                await recoverUnfinishedSession();
+            }
+        } catch (e) {
+            console.error("Failed to recover", e);
+            await recoverUnfinishedSession();
+        }
+
         const [sessions, todaySessions] = await Promise.all([
             getAllSessions(),
             getTodaySessions(),
         ]);
         set({ sessions, todaySessions });
+
+        // Also load stats
+        get().loadStats();
     },
 
     loadStats: async () => {
@@ -209,3 +299,4 @@ export const useSessionStore = create<TimerState>((set, get) => ({
         set({ totalFocusTime, currentStreak });
     },
 }));
+

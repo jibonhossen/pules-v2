@@ -64,9 +64,11 @@ export default function FolderAnalyticsScreen() {
         const current = new Date(start);
 
         while (current <= end) {
+            const offset = current.getTimezoneOffset() * 60000;
+            const dateStr = new Date(current.getTime() - offset).toISOString().split('T')[0];
             days.push({
                 date: new Date(current),
-                dateStr: current.toISOString().split('T')[0],
+                dateStr: dateStr,
                 dayLabel: current.toLocaleDateString('en-US', { weekday: 'short' }),
             });
             current.setDate(current.getDate() + 1);

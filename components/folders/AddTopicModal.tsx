@@ -10,6 +10,7 @@ import {
     TextInput,
     View,
     StyleSheet,
+    Switch,
 } from 'react-native';
 
 interface AddTopicModalProps {
@@ -17,7 +18,9 @@ interface AddTopicModalProps {
     folderName: string;
     folderColor: string;
     onClose: () => void;
-    onSave: (topicName: string) => void;
+    folderColor: string;
+    onClose: () => void;
+    onSave: (topicName: string, allowBackground: boolean) => void;
 }
 
 export function AddTopicModal({
@@ -31,17 +34,19 @@ export function AddTopicModal({
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
 
     const [topicName, setTopicName] = React.useState('');
+    const [allowBackground, setAllowBackground] = React.useState(false);
 
     React.useEffect(() => {
         if (visible) {
             setTopicName('');
+            setAllowBackground(false);
         }
     }, [visible]);
 
     const handleSave = () => {
         if (!topicName.trim()) return;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        onSave(topicName.trim());
+        onSave(topicName.trim(), allowBackground);
         onClose();
     };
 
@@ -85,6 +90,22 @@ export function AddTopicModal({
                                     borderColor: folderColor,
                                 },
                             ]}
+                        />
+                    </View>
+
+                    {/* Options */}
+                    <View style={styles.optionContainer}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.optionTitle, { color: colors.foreground }]}>Allow Background</Text>
+                            <Text variant="muted" style={styles.optionDescription}>
+                                Timer continues when you switch apps (e.g. for Online Class).
+                            </Text>
+                        </View>
+                        <Switch
+                            value={allowBackground}
+                            onValueChange={setAllowBackground}
+                            trackColor={{ false: colors.muted, true: folderColor }}
+                            thumbColor={'#fff'}
                         />
                     </View>
 
@@ -148,6 +169,22 @@ const styles = StyleSheet.create({
     },
     inputContainer: {
         marginBottom: 20,
+    },
+    optionContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 24,
+        gap: 16,
+    },
+    optionTitle: {
+        fontSize: 16,
+        fontWeight: '600',
+        marginBottom: 4,
+    },
+    optionDescription: {
+        fontSize: 13,
+        lineHeight: 18,
     },
     input: {
         borderRadius: 12,

@@ -39,12 +39,21 @@ export const PULSE_COLORS = {
 };
 
 // Heatmap color scale - Teal gradient
-export const HEATMAP_COLORS = {
+// Heatmap color scale - Teal gradient
+export const HEATMAP_COLORS_DARK = {
   none: '#27272a',       // Zinc-800 - 0 hours
   low: '#134e4a',        // Teal-900 - <1 hour
   medium: '#0d9488',     // Teal-600 - 1-2 hours
   high: '#2dd4bf',       // Teal-400 - 2-4 hours
   max: '#5eead4',        // Teal-300 - 4+ hours
+};
+
+export const HEATMAP_COLORS_LIGHT = {
+  none: '#e4e4e7',       // Zinc-200 - 0 hours
+  low: '#ccfbf1',        // Teal-100 - <1 hour
+  medium: '#5eead4',     // Teal-300 - 1-2 hours
+  high: '#2dd4bf',       // Teal-400 - 2-4 hours
+  max: '#0d9488',        // Teal-600 - 4+ hours
 };
 
 export const NAV_THEME: Record<'light' | 'dark', Theme> = {

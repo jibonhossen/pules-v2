@@ -49,10 +49,11 @@
     "zustand": "^5.0.10"
   },
   "devDependencies": {
+    "@expo/config-plugins": "^54.0.4",
     "@types/react": "~19.1.0",
-    "typescript": "~5.9.2",
     "eslint": "^9.25.0",
-    "eslint-config-expo": "~10.0.0"
+    "eslint-config-expo": "~10.0.0",
+    "typescript": "~5.9.2"
   },
   "private": true
 }

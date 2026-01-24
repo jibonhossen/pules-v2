@@ -26,9 +26,12 @@ async function getDailyMapForRange(startDate: string, endDate: string): Promise<
 
     const dailyMap = new Map<string, number>();
     sessions.forEach((session) => {
-        const date = session.start_time.split('T')[0];
-        const current = dailyMap.get(date) || 0;
-        dailyMap.set(date, current + (session.duration_seconds || 0));
+        const d = new Date(session.start_time);
+        const offset = d.getTimezoneOffset() * 60000;
+        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
+
+        const current = dailyMap.get(localDate) || 0;
+        dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
     return dailyMap;
 }
@@ -76,9 +79,11 @@ export default function ReportsScreen() {
         const current = new Date(start);
 
         while (current <= end) {
+            const offset = current.getTimezoneOffset() * 60000;
+            const dateStr = new Date(current.getTime() - offset).toISOString().split('T')[0];
             days.push({
                 date: new Date(current),
-                dateStr: current.toISOString().split('T')[0],
+                dateStr: dateStr,
                 dayLabel: current.toLocaleDateString('en-US', { weekday: 'short' }),
             });
             current.setDate(current.getDate() + 1);
@@ -151,7 +156,10 @@ export default function ReportsScreen() {
     }, [getDateRange, viewMode]);
 
     // Get today's focus time
-    const todayStr = new Date().toISOString().split('T')[0];
+    // Get today's focus time
+    const today = new Date();
+    const offset = today.getTimezoneOffset() * 60000;
+    const todayStr = new Date(today.getTime() - offset).toISOString().split('T')[0];
     const todayFocusTime = heatmapData.get(todayStr) || 0; // Use heatmapData as source of truth for "Today" regardless of view
 
     return (
