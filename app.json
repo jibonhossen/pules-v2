@@ -40,7 +40,8 @@
             "backgroundColor": "#000000"
           }
         }
-      ]
+      ],
+      "./plugins/withAndroidSplits"
     ],
     "experiments": {
       "typedRoutes": true,
