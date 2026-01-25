@@ -41,6 +41,36 @@ function SegmentedControl({
 }) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
+    const [containerWidth, setContainerWidth] = React.useState(0);
+    const translateX = useSharedValue(0);
+    const isInitialized = React.useRef(false);
+
+    React.useEffect(() => {
+        if (containerWidth > 0) {
+            const tabWidth = (containerWidth - 8) / 2; // Subtract padding
+            const targetX = value === 'list' ? 0 : tabWidth;
+
+            if (!isInitialized.current) {
+                // Snap instantly on first render to avoid "jump" from 0
+                translateX.value = targetX;
+                isInitialized.current = true;
+            } else {
+                // Animate smoothly on subsequent changes
+                translateX.value = withSpring(targetX, {
+                    damping: 25,
+                    stiffness: 200,
+                    mass: 0.8
+                });
+            }
+        }
+    }, [value, containerWidth]);
+
+    const indicatorStyle = useAnimatedStyle(() => {
+        return {
+            transform: [{ translateX: translateX.value }],
+            width: (containerWidth - 8) / 2,
+        };
+    });
 
     const handleChange = (mode: ViewMode) => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
@@ -48,27 +78,44 @@ function SegmentedControl({
     };
 
     return (
-        <View style={[styles.segmentContainer, { backgroundColor: colors.muted }]}>
+        <View
+            style={[styles.segmentContainer, { backgroundColor: colors.muted }]}
+            onLayout={(e) => setContainerWidth(e.nativeEvent.layout.width)}
+        >
+            {containerWidth > 0 && (
+                <Animated.View
+                    style={[
+                        styles.segmentButtonActive,
+                        {
+                            position: 'absolute',
+                            top: 4,
+                            bottom: 4,
+                            left: 4,
+                            backgroundColor: colors.card,
+                            shadowColor: colors.primary,
+                            zIndex: 1,
+                            borderRadius: 10,
+                        },
+                        indicatorStyle,
+                    ]}
+                />
+            )}
             {(['list', 'focus'] as const).map((mode) => (
                 <Pressable
                     key={mode}
                     onPress={() => handleChange(mode)}
                     style={[
                         styles.segmentButton,
-                        value === mode && [
-                            styles.segmentButtonActive,
-                            {
-                                backgroundColor: colors.card,
-                                shadowColor: colors.primary,
-                            },
-                        ],
+                        { zIndex: 2 }, // Text above background
                     ]}
                 >
                     <Text
                         style={[
                             styles.segmentText,
-                            { color: value === mode ? colors.foreground : colors.mutedForeground },
-                            value === mode && styles.segmentTextActive,
+                            {
+                                color: value === mode ? colors.foreground : colors.mutedForeground,
+                                fontWeight: value === mode ? '600' : '500'
+                            },
                         ]}
                     >
                         {mode.charAt(0).toUpperCase() + mode.slice(1)}
