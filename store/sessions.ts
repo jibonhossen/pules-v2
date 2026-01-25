@@ -13,6 +13,7 @@ import {
     upsertTopicConfig,
     type Session,
 } from '@/lib/database';
+import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { create } from 'zustand';
 
 
@@ -21,7 +22,7 @@ interface TimerState {
     isRunning: boolean;
     isPaused: boolean;
     elapsedSeconds: number;
-    startTime: number | null; // Unix timestamp when timer started (for accurate recovery)
+    startTime: number | null; // Unix timestamp when timer  started (for accurate recovery)
     pausedAt: number | null;  // Timestamp when paused (for calculating elapsed while paused)
     currentSessionId: number | null;
     currentTopic: string;
@@ -38,11 +39,11 @@ interface TimerState {
 
     // Timer actions
     startTimer: (topic: string, folderId?: number) => Promise<void>;
-    pauseTimer: () => void;
-    resumeTimer: () => void;
+    pauseTimer: () => Promise<void>;
+    resumeTimer: () => Promise<void>;
     stopTimer: () => Promise<void>;
     tick: () => void;
-    resetTimer: () => void;
+    resetTimer: () => Promise<void>;
 
     // App state actions
     onAppBackground: () => void;
@@ -106,9 +107,12 @@ export const useSessionStore = create<TimerState>((set, get) => ({
 
         // Persist state
         await setAppState('timer_state', JSON.stringify(newState));
+
+        // Keep screen awake
+        await activateKeepAwakeAsync();
     },
 
-    pauseTimer: () => {
+    pauseTimer: async () => {
         const { isRunning, isPaused } = get();
         if (isRunning && !isPaused) {
             const updates = {
@@ -117,10 +121,11 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             };
             set(updates);
             setAppState('timer_state', JSON.stringify(get()));
+            await deactivateKeepAwake();
         }
     },
 
-    resumeTimer: () => {
+    resumeTimer: async () => {
         const { isRunning, isPaused, pausedAt, startTime } = get();
         if (isRunning && isPaused && pausedAt && startTime) {
             // Calculate how long we were paused
@@ -134,6 +139,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             set(updates);
 
             setAppState('timer_state', JSON.stringify(get()));
+            await activateKeepAwakeAsync();
         }
     },
 
@@ -158,6 +164,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             pausedAt: null,
             autoPaused: false,
         });
+        await deactivateKeepAwake();
         // Refresh data
         get().loadSessions();
         get().loadStats();
@@ -172,7 +179,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
         }
     },
 
-    resetTimer: () => {
+    resetTimer: async () => {
         set({
             isRunning: false,
             isPaused: false,
@@ -183,6 +190,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             pausedAt: null,
             autoPaused: false,
         });
+        await deactivateKeepAwake();
     },
 
     // Called when app goes to background

@@ -14,11 +14,10 @@
     "production": {
       "autoIncrement": true
     },
-    "local-apk": {
+    "preview-apk": {
       "distribution": "internal",
       "android": {
-        "buildType": "apk",
-        "gradleCommand": ":app:assembleRelease"
+        "buildType": "apk"
       }
     }
   },
