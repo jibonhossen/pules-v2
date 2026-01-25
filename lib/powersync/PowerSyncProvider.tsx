@@ -12,8 +12,11 @@ interface PowerSyncProviderProps {
     children: ReactNode;
 }
 
+import { useSessionStore } from '@/store/sessions';
+
 export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
-    const { userId, getToken } = useAuth();
+    const { getToken } = useAuth();
+    const userId = useSessionStore((state) => state.userId);
     const [isReady, setIsReady] = useState(false);
     const [jwtTemplateFailed, setJwtTemplateFailed] = useState(false);
 

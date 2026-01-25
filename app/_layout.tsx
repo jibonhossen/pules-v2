@@ -1,10 +1,11 @@
 
 import { NAV_THEME, PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getLastUserId, saveLastUserId, tokenCache } from '@/lib/cache';
+import { setCurrentUserId } from '@/lib/database';
 import { PowerSyncProvider } from '@/lib/powersync/PowerSyncProvider';
 import { useSessionStore } from '@/store/sessions';
 import { ClerkLoaded, ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
-import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -39,34 +40,60 @@ function LoadingScreen() {
 
 // Component to handle auth-based routing
 function InitialLayout() {
-  const { isSignedIn, isLoaded } = useAuth();
+  const { isSignedIn, isLoaded, userId } = useAuth();
   const { user } = useUser();
   const segments = useSegments();
   const router = useRouter();
   const setUserId = useSessionStore((state) => state.setUserId);
+  const [isRestoring, setIsRestoring] = React.useState(true);
 
-  // Sync user ID to session store - PowerSync handles cloud sync automatically
+  // Sync user ID to session store and database module
   React.useEffect(() => {
-    if (user?.id) {
-      setUserId(user.id);
-    } else {
-      setUserId(null);
-    }
-  }, [user?.id, setUserId]);
+    const syncUser = async () => {
+      if (user?.id) {
+        // Online or valid session - save to local store
+        setUserId(user.id);
+        setCurrentUserId(user.id);
+        await saveLastUserId(user.id);
+      } else if (!isSignedIn && isLoaded) {
+        // Offline or session expired - try to restore from local store
+        const lastId = await getLastUserId();
+        if (lastId) {
+          console.log('[Auth] Restored offline session for:', lastId);
+          setUserId(lastId);
+          setCurrentUserId(lastId);
+        } else {
+          setUserId(null);
+          setCurrentUserId(null);
+        }
+      }
+      setIsRestoring(false);
+    };
+
+    syncUser();
+  }, [user?.id, isSignedIn, isLoaded, setUserId]);
 
   React.useEffect(() => {
-    if (!isLoaded) return;
+    if (!isLoaded || isRestoring) return;
 
-    const inAuthGroup = segments[0] === '(auth)';
+    const performNavigation = async () => {
+      const inAuthGroup = segments[0] === '(auth)';
+      const lastId = await getLastUserId();
 
-    if (isSignedIn && inAuthGroup) {
-      // User is signed in but on auth screen, redirect to home
-      router.replace('/(tabs)');
-    } else if (!isSignedIn && !inAuthGroup) {
-      // User is not signed in and not on auth screen, redirect to sign-in
-      router.replace('/(auth)/sign-in');
-    }
-  }, [isSignedIn, isLoaded, segments]);
+      // If signed in via Clerk OR we have a locally cached user ID (offline mode)
+      const hasEffectiveUser = isSignedIn || !!lastId;
+
+      if (hasEffectiveUser && inAuthGroup) {
+        // User is signed in (or offline cached) but on auth screen, redirect to home
+        router.replace('/(tabs)');
+      } else if (!hasEffectiveUser && !inAuthGroup) {
+        // User is really not signed in and not on auth screen, redirect to sign-in
+        router.replace('/(auth)/sign-in');
+      }
+    };
+    performNavigation();
+
+  }, [isSignedIn, isLoaded, segments, isRestoring]);
 
   return (
     <Stack>

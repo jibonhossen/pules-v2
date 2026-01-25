@@ -1,4 +1,4 @@
-import { useAuth } from '@clerk/clerk-expo';
+import { useSessionStore } from '@/store/sessions';
 import { usePowerSyncWatchedQuery } from '@powersync/react';
 
 export interface Session {
@@ -21,7 +21,7 @@ export interface Session {
 }
 
 export function useLiveSessions(days: number = 1) {
-    const { userId } = useAuth();
+    const userId = useSessionStore((state) => state.userId);
 
     // Calculate date range
     const today = new Date();
@@ -56,7 +56,7 @@ export function useLiveSessions(days: number = 1) {
 }
 
 export function useLiveStats() {
-    const { userId } = useAuth();
+    const userId = useSessionStore((state) => state.userId);
 
     // Total Focus Time
     const totalTimeResult = usePowerSyncWatchedQuery<{ total: number }>(

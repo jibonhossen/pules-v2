@@ -275,11 +275,11 @@ export async function createFolder(
     return id;
 }
 
-export async function getFolders(): Promise<Folder[]> {
-    const userId = getCurrentUserId();
+export async function getFolders(userId?: string): Promise<Folder[]> {
+    const id = userId || getCurrentUserId();
     return db.getAll<Folder>(
         'SELECT * FROM folders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC',
-        [userId]
+        [id]
     );
 }
 
@@ -330,8 +330,8 @@ export async function createTopicInFolder(topic: string, folderId: string): Prom
     );
 }
 
-export async function getTopicsByFolder(folderId: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
-    const userId = getCurrentUserId();
+export async function getTopicsByFolder(folderId: string, userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
+    const id = userId || getCurrentUserId();
     return db.getAll(
         `SELECT 
             s.topic,
@@ -344,12 +344,12 @@ export async function getTopicsByFolder(folderId: string): Promise<{ topic: stri
         WHERE s.folder_id = ? AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
         GROUP BY s.topic, tc.color
         ORDER BY lastSession DESC`,
-        [folderId, userId]
+        [folderId, id]
     );
 }
 
-export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
-    const userId = getCurrentUserId();
+export async function getUnfolderedTopics(userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
+    const id = userId || getCurrentUserId();
     return db.getAll(
         `SELECT 
             s.topic,
@@ -362,7 +362,7 @@ export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime:
         WHERE s.folder_id IS NULL AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
         GROUP BY s.topic, tc.color
         ORDER BY lastSession DESC`,
-        [userId]
+        [id]
     );
 }
 
@@ -375,8 +375,8 @@ export async function assignTopicToFolder(topic: string, folderId: string | null
     );
 }
 
-export async function getFolderStats(folderId: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
-    const userId = getCurrentUserId();
+export async function getFolderStats(folderId: string, userId?: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
+    const id = userId || getCurrentUserId();
     const result = await db.getOptional<{ totalTime: number; sessionCount: number; topicCount: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
@@ -384,7 +384,7 @@ export async function getFolderStats(folderId: string): Promise<{ totalTime: num
             COUNT(DISTINCT topic) as topicCount
         FROM sessions 
         WHERE folder_id = ? AND user_id = ? AND is_deleted = 0 AND end_time IS NOT NULL`,
-        [folderId, userId]
+        [folderId, id]
     );
     return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
 }
