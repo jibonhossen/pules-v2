@@ -1,220 +1,129 @@
-import * as SQLite from 'expo-sqlite';
-import { useEffect, useState } from 'react';
+/**
+ * Database Layer - PowerSync Implementation
+ * All CRUD operations using PowerSync's local SQLite database
+ */
+import { db } from './powersync/database';
+
+// ==================== TYPES ====================
 
 export interface Folder {
-    id: number;
+    id: string;
+    user_id: string;
     name: string;
     color: string;
     icon: string;
     created_at: string;
-    cloud_id?: string | null;
-    updated_at?: string | null;
+    updated_at: string;
+    is_deleted: number;
 }
 
 export interface Session {
-    id: number;
+    id: string;
+    user_id: string;
     topic: string;
     tags: string | null;
-    folder_id: number | null;
+    folder_id: string | null;
     start_time: string;
     end_time: string | null;
     duration_seconds: number;
-    cloud_id?: string | null;
-    updated_at?: string | null;
-    // Joined fields
+    created_at: string;
+    updated_at: string;
+    is_deleted: number;
+    // Joined fields for UI
     folder_name?: string | null;
     folder_color?: string | null;
     folder_icon?: string | null;
     topic_color?: string | null;
 }
 
-
-
-// ==================== CLOUD ID HELPERS ====================
-
-export async function setFolderCloudId(id: number, cloudId: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync(
-        'UPDATE folders SET cloud_id = ? WHERE id = ?',
-        cloudId, id
-    );
+export interface TopicConfig {
+    id: string;
+    user_id: string;
+    topic: string;
+    allow_background: number;
+    color: string | null;
+    created_at: string;
+    updated_at: string;
 }
 
-export async function setSessionCloudId(id: number, cloudId: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync(
-        'UPDATE sessions SET cloud_id = ? WHERE id = ?',
-        cloudId, id
-    );
+// Current user ID - set by the app
+let currentUserId: string | null = null;
+
+export function setCurrentUserId(userId: string | null) {
+    currentUserId = userId;
 }
 
-export async function getFolderByCloudId(cloudId: string): Promise<Folder | null> {
-    const database = await getDatabase();
-    return database.getFirstAsync<Folder>(
-        'SELECT * FROM folders WHERE cloud_id = ?',
-        cloudId
-    );
-}
-
-export async function getSessionByCloudId(cloudId: string): Promise<Session | null> {
-    const database = await getDatabase();
-    return database.getFirstAsync<Session>(
-        'SELECT * FROM sessions WHERE cloud_id = ?',
-        cloudId
-    );
-}
-
-// ==================== APP STATE & RECOVERY ====================
-
-
-let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
-
-export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
-    if (dbPromise) {
-        return dbPromise;
+export function getCurrentUserId(): string {
+    if (!currentUserId) {
+        throw new Error('User ID not set. Call setCurrentUserId first.');
     }
-
-    dbPromise = (async () => {
-        const db = await SQLite.openDatabaseAsync('pulse.db');
-
-        // Create folders table
-        await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS folders (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          name TEXT NOT NULL,
-          color TEXT DEFAULT '#14b8a6',
-          icon TEXT DEFAULT 'folder',
-          created_at TEXT NOT NULL,
-          cloud_id TEXT
-        );
-      `);
-
-        // Create sessions table
-        await db.execAsync(`
-        CREATE TABLE IF NOT EXISTS sessions (
-          id INTEGER PRIMARY KEY AUTOINCREMENT,
-          topic TEXT NOT NULL,
-          tags TEXT,
-          folder_id INTEGER REFERENCES folders(id),
-          start_time TEXT NOT NULL,
-          end_time TEXT,
-          duration_seconds INTEGER DEFAULT 0,
-          cloud_id TEXT
-        );
-
-        -- Create app_state table for persistence
-        CREATE TABLE IF NOT EXISTS app_state (
-          key TEXT PRIMARY KEY,
-          value TEXT NOT NULL
-        );
-
-        -- Create topic_configs table
-        CREATE TABLE IF NOT EXISTS topic_configs (
-          topic TEXT PRIMARY KEY,
-          allow_background INTEGER DEFAULT 0,
-          color TEXT
-        );
-      `);
-
-        // Try to add folder_id column if it doesn't exist (for existing databases)
-        try {
-            await db.execAsync(`ALTER TABLE sessions ADD COLUMN folder_id INTEGER REFERENCES folders(id);`);
-        } catch (e) {
-            // Column already exists, ignore
-        }
-
-        // Try to add color column to topic_configs if it doesn't exist
-        try {
-            await db.execAsync(`ALTER TABLE topic_configs ADD COLUMN color TEXT;`);
-        } catch (e) {
-            // Column already exists, ignore
-        }
-
-        // Add cloud_id to folders and sessions for multi-device sync
-        try {
-            await db.execAsync(`ALTER TABLE folders ADD COLUMN cloud_id TEXT;`);
-        } catch (e) {
-            // Ignore
-        }
-        try {
-            await db.execAsync(`ALTER TABLE sessions ADD COLUMN cloud_id TEXT;`);
-        } catch (e) {
-            // Ignore
-        }
-
-        // Add updated_at to sessions for sync delta
-        try {
-            await db.execAsync(`ALTER TABLE sessions ADD COLUMN updated_at TEXT;`);
-            // Initialize updated_at for existing records
-            await db.execAsync(`UPDATE sessions SET updated_at = start_time WHERE updated_at IS NULL;`);
-        } catch (e) {
-            // Ignore
-        }
-
-        return db;
-    })();
-
-    return dbPromise;
+    return currentUserId;
 }
 
-// Hook to initialize database
-export function useDatabase() {
-    const [isReady, setIsReady] = useState(false);
-    const [error, setError] = useState<Error | null>(null);
-
-    useEffect(() => {
-        getDatabase()
-            .then(() => setIsReady(true))
-            .catch((err) => setError(err));
-    }, []);
-
-    return { isReady, error };
+// Generate UUID
+function uuid(): string {
+    return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, (c) => {
+        const r = (Math.random() * 16) | 0;
+        const v = c === 'x' ? r : (r & 0x3) | 0x8;
+        return v.toString(16);
+    });
 }
 
-// Session CRUD operations
-export async function createSession(topic: string, tags?: string, folderId?: number): Promise<number> {
-    const database = await getDatabase();
-    const startTime = new Date().toISOString();
+// ==================== SESSION CRUD ====================
 
-    const result = await database.runAsync(
-        'INSERT INTO sessions (topic, tags, folder_id, start_time) VALUES (?, ?, ?, ?)',
-        topic, tags || null, folderId || null, startTime
+export async function createSession(
+    topic: string,
+    tags?: string,
+    folderId?: string
+): Promise<string> {
+    const id = uuid();
+    const now = new Date().toISOString();
+    const userId = getCurrentUserId();
+
+    await db.execute(
+        `INSERT INTO sessions (id, user_id, topic, tags, folder_id, start_time, duration_seconds, created_at, updated_at, is_deleted)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
+        [id, userId, topic, tags || null, folderId || null, now, now, now]
     );
 
-    return result.lastInsertRowId;
+    return id;
 }
 
-export async function endSession(id: number): Promise<void> {
-    const database = await getDatabase();
-    const endTime = new Date().toISOString();
+export async function endSession(id: string): Promise<void> {
+    const now = new Date().toISOString();
 
     // Get start time to calculate duration
-    const session = await database.getFirstAsync<Session>(
+    const session = await db.getOptional<Session>(
         'SELECT * FROM sessions WHERE id = ?',
-        id
+        [id]
     );
 
     if (session) {
         const start = new Date(session.start_time).getTime();
-        const end = new Date(endTime).getTime();
+        const end = new Date(now).getTime();
         const durationSeconds = Math.floor((end - start) / 1000);
 
-        await database.runAsync(
-            'UPDATE sessions SET end_time = ?, duration_seconds = ? WHERE id = ?',
-            endTime, durationSeconds, id
+        await db.execute(
+            'UPDATE sessions SET end_time = ?, duration_seconds = ?, updated_at = ? WHERE id = ?',
+            [now, durationSeconds, now, id]
         );
     }
 }
 
 export async function getAllSessions(): Promise<Session[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
-         FROM sessions 
-         LEFT JOIN folders ON sessions.folder_id = folders.id 
-         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
-         WHERE duration_seconds > 0
-         ORDER BY start_time DESC`
+    const userId = getCurrentUserId();
+    return db.getAll<Session>(
+        `SELECT s.*, 
+                f.name as folder_name, 
+                f.color as folder_color, 
+                f.icon as folder_icon,
+                tc.color as topic_color
+         FROM sessions s
+         LEFT JOIN folders f ON s.folder_id = f.id AND f.is_deleted = 0
+         LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+         WHERE s.user_id = ? AND s.is_deleted = 0 AND s.duration_seconds > 0
+         ORDER BY s.start_time DESC`,
+        [userId]
     );
 }
 
@@ -222,15 +131,21 @@ export async function getSessionsByDateRange(
     startDate: string,
     endDate: string
 ): Promise<Session[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
-         FROM sessions 
-         LEFT JOIN folders ON sessions.folder_id = folders.id 
-         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
-         WHERE start_time >= ? AND start_time <= ? AND duration_seconds > 0
-         ORDER BY start_time DESC`,
-        startDate, endDate
+    const userId = getCurrentUserId();
+    return db.getAll<Session>(
+        `SELECT s.*, 
+                f.name as folder_name, 
+                f.color as folder_color, 
+                f.icon as folder_icon,
+                tc.color as topic_color
+         FROM sessions s
+         LEFT JOIN folders f ON s.folder_id = f.id AND f.is_deleted = 0
+         LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+         WHERE s.user_id = ? AND s.is_deleted = 0 
+               AND s.start_time >= ? AND s.start_time <= ? 
+               AND s.duration_seconds > 0
+         ORDER BY s.start_time DESC`,
+        [userId, startDate, endDate]
     );
 }
 
@@ -239,31 +154,28 @@ export async function getTodaySessions(): Promise<Session[]> {
     today.setHours(0, 0, 0, 0);
     const tomorrow = new Date(today);
     tomorrow.setDate(tomorrow.getDate() + 1);
-
     return getSessionsByDateRange(today.toISOString(), tomorrow.toISOString());
 }
 
 export async function getDailyStats(days: number = 30): Promise<Map<string, number>> {
-    const database = await getDatabase();
+    const userId = getCurrentUserId();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
-    const sessions = await database.getAllAsync<Session>(
+    const sessions = await db.getAll<Session>(
         `SELECT * FROM sessions 
-     WHERE start_time >= ? AND end_time IS NOT NULL
-     ORDER BY start_time`,
-        startDate.toISOString()
+         WHERE user_id = ? AND is_deleted = 0 
+               AND start_time >= ? AND end_time IS NOT NULL
+         ORDER BY start_time`,
+        [userId, startDate.toISOString()]
     );
 
     const dailyMap = new Map<string, number>();
-
     sessions.forEach((session) => {
-        // Convert to local date string YYYY-MM-DD
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
-
         const current = dailyMap.get(localDate) || 0;
         dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
@@ -272,9 +184,10 @@ export async function getDailyStats(days: number = 30): Promise<Map<string, numb
 }
 
 export async function getTotalFocusTime(): Promise<number> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ total: number }>(
-        'SELECT COALESCE(SUM(duration_seconds), 0) as total FROM sessions WHERE end_time IS NOT NULL'
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ total: number }>(
+        'SELECT COALESCE(SUM(duration_seconds), 0) as total FROM sessions WHERE user_id = ? AND is_deleted = 0 AND end_time IS NOT NULL',
+        [userId]
     );
     return result?.total || 0;
 }
@@ -287,7 +200,6 @@ export async function getCurrentStreak(): Promise<number> {
     for (let i = 0; i < 365; i++) {
         const date = new Date(today);
         date.setDate(date.getDate() - i);
-        // Correct local date string logic
         const offset = date.getTimezoneOffset() * 60000;
         const dateStr = new Date(date.getTime() - offset).toISOString().split('T')[0];
 
@@ -297,201 +209,219 @@ export async function getCurrentStreak(): Promise<number> {
             break;
         }
     }
-
     return streak;
 }
 
-// Get all sessions for a specific topic
 export async function getSessionsByTopic(topic: string): Promise<Session[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<Session>(
-        `SELECT sessions.*, folders.name as folder_name, folders.color as folder_color, folders.icon as folder_icon, topic_configs.color as topic_color 
-         FROM sessions 
-         LEFT JOIN folders ON sessions.folder_id = folders.id 
-         LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
-         WHERE sessions.topic = ? AND duration_seconds > 0
-         ORDER BY start_time DESC`,
-        topic
+    const userId = getCurrentUserId();
+    return db.getAll<Session>(
+        `SELECT s.*, 
+                f.name as folder_name, 
+                f.color as folder_color, 
+                f.icon as folder_icon,
+                tc.color as topic_color
+         FROM sessions s
+         LEFT JOIN folders f ON s.folder_id = f.id AND f.is_deleted = 0
+         LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+         WHERE s.user_id = ? AND s.topic = ? AND s.is_deleted = 0 AND s.duration_seconds > 0
+         ORDER BY s.start_time DESC`,
+        [userId, topic]
     );
 }
 
-// Update all sessions with a specific topic to a new topic name
 export async function renameAllSessionsWithTopic(oldTopic: string, newTopic: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync(
-        'UPDATE sessions SET topic = ? WHERE topic = ?',
-        newTopic, oldTopic
+    const userId = getCurrentUserId();
+    const now = new Date().toISOString();
+    await db.execute(
+        'UPDATE sessions SET topic = ?, updated_at = ? WHERE user_id = ? AND topic = ?',
+        [newTopic, now, userId, oldTopic]
     );
 }
 
-// Delete a session by ID
-export async function deleteSession(id: number): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync('DELETE FROM sessions WHERE id = ?', id);
+export async function deleteSession(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    await db.execute(
+        'UPDATE sessions SET is_deleted = 1, updated_at = ? WHERE id = ?',
+        [now, id]
+    );
 }
 
-// Delete all sessions for a specific topic
 export async function deleteTopic(topic: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync('DELETE FROM sessions WHERE topic = ?', topic);
+    const userId = getCurrentUserId();
+    const now = new Date().toISOString();
+    await db.execute(
+        'UPDATE sessions SET is_deleted = 1, updated_at = ? WHERE user_id = ? AND topic = ?',
+        [now, userId, topic]
+    );
 }
 
-// ==================== FOLDER FUNCTIONS ====================
+// ==================== FOLDER CRUD ====================
 
-// Create a new folder
-export async function createFolder(name: string, color: string = '#14b8a6', icon: string = 'folder'): Promise<number> {
-    const database = await getDatabase();
-    const createdAt = new Date().toISOString();
+export async function createFolder(
+    name: string,
+    color: string = '#14b8a6',
+    icon: string = 'folder'
+): Promise<string> {
+    const id = uuid();
+    const now = new Date().toISOString();
+    const userId = getCurrentUserId();
 
-    const result = await database.runAsync(
-        'INSERT INTO folders (name, color, icon, created_at) VALUES (?, ?, ?, ?)',
-        name, color, icon, createdAt
+    await db.execute(
+        `INSERT INTO folders (id, user_id, name, color, icon, created_at, updated_at, is_deleted)
+         VALUES (?, ?, ?, ?, ?, ?, ?, 0)`,
+        [id, userId, name, color, icon, now, now]
     );
 
-    return result.lastInsertRowId;
+    return id;
 }
 
-// Get all folders
 export async function getFolders(): Promise<Folder[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<Folder>(
-        'SELECT * FROM folders ORDER BY created_at DESC'
+    const userId = getCurrentUserId();
+    return db.getAll<Folder>(
+        'SELECT * FROM folders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC',
+        [userId]
     );
 }
 
-// Get a folder by ID
-export async function getFolderById(id: number): Promise<Folder | null> {
-    const database = await getDatabase();
-    return database.getFirstAsync<Folder>(
-        'SELECT * FROM folders WHERE id = ?',
-        id
+export async function getFolderById(id: string): Promise<Folder | null> {
+    const result = await db.getOptional<Folder>(
+        'SELECT * FROM folders WHERE id = ? AND is_deleted = 0',
+        [id]
     );
+    return result || null;
 }
 
-// Update folder
-export async function updateFolder(id: number, name: string, color: string, icon: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync(
-        'UPDATE folders SET name = ?, color = ?, icon = ? WHERE id = ?',
-        name, color, icon, id
-    );
-}
-
-// Delete folder (also removes folder_id from associated sessions)
-export async function deleteFolder(id: number): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync('UPDATE sessions SET folder_id = NULL WHERE folder_id = ?', id);
-    await database.runAsync('DELETE FROM folders WHERE id = ?', id);
-}
-
-// Create a placeholder session to simple "create" a topic
-export async function createTopicInFolder(topic: string, folderId: number): Promise<void> {
-    const database = await getDatabase();
+export async function updateFolder(
+    id: string,
+    name: string,
+    color: string,
+    icon: string
+): Promise<void> {
     const now = new Date().toISOString();
-    await database.runAsync(
-        'INSERT INTO sessions (topic, folder_id, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, 0)',
-        topic, folderId, now, now
+    await db.execute(
+        'UPDATE folders SET name = ?, color = ?, icon = ?, updated_at = ? WHERE id = ?',
+        [name, color, icon, now, id]
     );
 }
 
-// Get unique topics for a folder
-export async function getTopicsByFolder(folderId: number): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }>(
+export async function deleteFolder(id: string): Promise<void> {
+    const now = new Date().toISOString();
+    // Remove folder reference from sessions
+    await db.execute(
+        'UPDATE sessions SET folder_id = NULL, updated_at = ? WHERE folder_id = ?',
+        [now, id]
+    );
+    // Soft delete the folder
+    await db.execute(
+        'UPDATE folders SET is_deleted = 1, updated_at = ? WHERE id = ?',
+        [now, id]
+    );
+}
+
+export async function createTopicInFolder(topic: string, folderId: string): Promise<void> {
+    const id = uuid();
+    const now = new Date().toISOString();
+    const userId = getCurrentUserId();
+
+    await db.execute(
+        `INSERT INTO sessions (id, user_id, topic, folder_id, start_time, end_time, duration_seconds, created_at, updated_at, is_deleted)
+         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
+        [id, userId, topic, folderId, now, now, now, now]
+    );
+}
+
+export async function getTopicsByFolder(folderId: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
+    const userId = getCurrentUserId();
+    return db.getAll(
         `SELECT 
-            sessions.topic,
-            COALESCE(SUM(duration_seconds), 0) as totalTime,
-            COUNT(CASE WHEN duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(start_time) as lastSession,
-            topic_configs.color
-        FROM sessions 
-        LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
-        WHERE folder_id = ? AND end_time IS NOT NULL
-        GROUP BY sessions.topic, topic_configs.color
+            s.topic,
+            COALESCE(SUM(s.duration_seconds), 0) as totalTime,
+            COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
+            MAX(s.start_time) as lastSession,
+            tc.color
+        FROM sessions s
+        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+        WHERE s.folder_id = ? AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        GROUP BY s.topic, tc.color
         ORDER BY lastSession DESC`,
-        folderId
+        [folderId, userId]
     );
 }
 
-// Get topics without a folder
-export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string }[]> {
-    const database = await getDatabase();
-    return database.getAllAsync<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }>(
+export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
+    const userId = getCurrentUserId();
+    return db.getAll(
         `SELECT 
-            sessions.topic,
-            COALESCE(SUM(duration_seconds), 0) as totalTime,
-            COUNT(CASE WHEN duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(start_time) as lastSession,
-            topic_configs.color
-        FROM sessions 
-        LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
-        WHERE folder_id IS NULL AND end_time IS NOT NULL
-        GROUP BY sessions.topic, topic_configs.color
-        ORDER BY lastSession DESC`
+            s.topic,
+            COALESCE(SUM(s.duration_seconds), 0) as totalTime,
+            COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
+            MAX(s.start_time) as lastSession,
+            tc.color
+        FROM sessions s
+        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+        WHERE s.folder_id IS NULL AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        GROUP BY s.topic, tc.color
+        ORDER BY lastSession DESC`,
+        [userId]
     );
 }
 
-// Assign topic to folder
-export async function assignTopicToFolder(topic: string, folderId: number | null): Promise<void> {
-    const database = await getDatabase();
+export async function assignTopicToFolder(topic: string, folderId: string | null): Promise<void> {
+    const userId = getCurrentUserId();
     const now = new Date().toISOString();
-    await database.runAsync(
-        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE topic = ?',
-        folderId, now, topic
+    await db.execute(
+        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE user_id = ? AND topic = ?',
+        [folderId, now, userId, topic]
     );
 }
 
-// Get folder stats
-export async function getFolderStats(folderId: number): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; topicCount: number }>(
+export async function getFolderStats(folderId: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ totalTime: number; sessionCount: number; topicCount: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(*) as sessionCount,
             COUNT(DISTINCT topic) as topicCount
         FROM sessions 
-        WHERE folder_id = ? AND end_time IS NOT NULL`,
-        folderId
+        WHERE folder_id = ? AND user_id = ? AND is_deleted = 0 AND end_time IS NOT NULL`,
+        [folderId, userId]
     );
     return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
 }
 
-// Get topic stats
 export async function getTopicStats(topic: string): Promise<{ totalTime: number; sessionCount: number; averageTime: number }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; averageTime: number }>(
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ totalTime: number; sessionCount: number; averageTime: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(*) as sessionCount,
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
-        WHERE topic = ? AND end_time IS NOT NULL`,
-        topic
+        WHERE topic = ? AND user_id = ? AND is_deleted = 0 AND end_time IS NOT NULL`,
+        [topic, userId]
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
 
-// Get daily stats for a specific topic
 export async function getTopicDailyStats(topic: string, days: number = 30): Promise<Map<string, number>> {
-    const database = await getDatabase();
+    const userId = getCurrentUserId();
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
 
-    const sessions = await database.getAllAsync<Session>(
+    const sessions = await db.getAll<Session>(
         `SELECT * FROM sessions 
-     WHERE topic = ? AND start_time >= ? AND end_time IS NOT NULL
-     ORDER BY start_time`,
-        topic, startDate.toISOString()
+         WHERE topic = ? AND user_id = ? AND is_deleted = 0 
+               AND start_time >= ? AND end_time IS NOT NULL
+         ORDER BY start_time`,
+        [topic, userId, startDate.toISOString()]
     );
 
     const dailyMap = new Map<string, number>();
-
     sessions.forEach((session) => {
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
-
         const current = dailyMap.get(localDate) || 0;
         dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
@@ -499,28 +429,21 @@ export async function getTopicDailyStats(topic: string, days: number = 30): Prom
     return dailyMap;
 }
 
-// Get daily stats for a specific topic within a date range
 export async function getTopicDailyStatsForRange(topic: string, startDate: string, endDate: string): Promise<Map<string, number>> {
-    const database = await getDatabase();
-
-    // Ensure dates are string format YYYY-MM-DD for comparison if needed, 
-    // but here we rely on ISO string comparison for specific range.
-    // Ideally inputs are ISO strings.
-
-    const sessions = await database.getAllAsync<Session>(
+    const userId = getCurrentUserId();
+    const sessions = await db.getAll<Session>(
         `SELECT * FROM sessions 
-     WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
-     ORDER BY start_time`,
-        topic, startDate, endDate
+         WHERE topic = ? AND user_id = ? AND is_deleted = 0 
+               AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
+         ORDER BY start_time`,
+        [topic, userId, startDate, endDate]
     );
 
     const dailyMap = new Map<string, number>();
-
     sessions.forEach((session) => {
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
-
         const current = dailyMap.get(localDate) || 0;
         dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
@@ -528,23 +451,21 @@ export async function getTopicDailyStatsForRange(topic: string, startDate: strin
     return dailyMap;
 }
 
-export async function getFolderDailyStatsForRange(folderId: number, startDate: string, endDate: string): Promise<Map<string, number>> {
-    const database = await getDatabase();
-
-    const sessions = await database.getAllAsync<Session>(
+export async function getFolderDailyStatsForRange(folderId: string, startDate: string, endDate: string): Promise<Map<string, number>> {
+    const userId = getCurrentUserId();
+    const sessions = await db.getAll<Session>(
         `SELECT * FROM sessions 
-     WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
-     ORDER BY start_time`,
-        folderId, startDate, endDate
+         WHERE folder_id = ? AND user_id = ? AND is_deleted = 0 
+               AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
+         ORDER BY start_time`,
+        [folderId, userId, startDate, endDate]
     );
 
     const dailyMap = new Map<string, number>();
-
     sessions.forEach((session) => {
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
-
         const current = dailyMap.get(localDate) || 0;
         dailyMap.set(localDate, current + (session.duration_seconds || 0));
     });
@@ -552,177 +473,145 @@ export async function getFolderDailyStatsForRange(folderId: number, startDate: s
     return dailyMap;
 }
 
-// Get daily stats for a specific folder
-export async function getFolderDailyStats(folderId: number, days: number = 30): Promise<Map<string, number>> {
-    const database = await getDatabase();
+export async function getFolderDailyStats(folderId: string, days: number = 30): Promise<Map<string, number>> {
     const startDate = new Date();
     startDate.setDate(startDate.getDate() - days);
     startDate.setHours(0, 0, 0, 0);
-
-    const sessions = await database.getAllAsync<Session>(
-        `SELECT * FROM sessions 
-     WHERE folder_id = ? AND start_time >= ? AND end_time IS NOT NULL
-     ORDER BY start_time`,
-        folderId, startDate.toISOString()
-    );
-
-    const dailyMap = new Map<string, number>();
-
-    sessions.forEach((session) => {
-        const d = new Date(session.start_time);
-        const offset = d.getTimezoneOffset() * 60000;
-        const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
-
-        const current = dailyMap.get(localDate) || 0;
-        dailyMap.set(localDate, current + (session.duration_seconds || 0));
-    });
-
-    return dailyMap;
+    const endDate = new Date();
+    return getFolderDailyStatsForRange(folderId, startDate.toISOString(), endDate.toISOString());
 }
 
-// Move topic to folder
-export async function moveTopicToFolder(topic: string, folderId: number): Promise<void> {
-    const database = await getDatabase();
-    const now = new Date().toISOString();
-    await database.runAsync(
-        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE topic = ?',
-        folderId, now, topic
-    );
+export async function moveTopicToFolder(topic: string, folderId: string): Promise<void> {
+    return assignTopicToFolder(topic, folderId);
 }
 
-// Get topic stats for a specific date range
 export async function getTopicStatsForRange(topic: string, startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; averageTime: number }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; averageTime: number }>(
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ totalTime: number; sessionCount: number; averageTime: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(*) as sessionCount,
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
-        WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        topic, startDate, endDate
+        WHERE topic = ? AND user_id = ? AND is_deleted = 0 
+              AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [topic, userId, startDate, endDate]
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
 
-// Get folder stats for a specific date range
-export async function getFolderStatsForRange(folderId: number, startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; topicCount: number }>(
+export async function getFolderStatsForRange(folderId: string, startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ totalTime: number; sessionCount: number; topicCount: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(*) as sessionCount,
             COUNT(DISTINCT topic) as topicCount
         FROM sessions 
-        WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        folderId, startDate, endDate
+        WHERE folder_id = ? AND user_id = ? AND is_deleted = 0 
+              AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [folderId, userId, startDate, endDate]
     );
     return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
 }
 
-// Get global stats for a specific date range
 export async function getStatsForRange(startDate: string, endDate: string): Promise<{ totalTime: number; sessionCount: number; averageTime: number }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ totalTime: number; sessionCount: number; averageTime: number }>(
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<{ totalTime: number; sessionCount: number; averageTime: number }>(
         `SELECT 
             COALESCE(SUM(duration_seconds), 0) as totalTime,
             COUNT(*) as sessionCount,
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
-        WHERE start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        startDate, endDate
+        WHERE user_id = ? AND is_deleted = 0 
+              AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
+        [userId, startDate, endDate]
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
 
-// ==================== APP STATE & RECOVERY ====================
-
-export async function setAppState(key: string, value: string): Promise<void> {
-    const database = await getDatabase();
-    await database.runAsync(
-        'INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)',
-        key, value
-    );
-}
-
-export async function getAppState(key: string): Promise<string | null> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ value: string }>(
-        'SELECT value FROM app_state WHERE key = ?',
-        key
-    );
-    return result?.value || null;
-}
-
-// ==================== TOPIC CONFIGS ====================
+// ==================== TOPIC CONFIGS (Colors) ====================
 
 export async function upsertTopicConfig(topic: string, allowBackground: boolean, color?: string): Promise<void> {
-    const database = await getDatabase();
+    const userId = getCurrentUserId();
+    const now = new Date().toISOString();
 
-    // Check existing config to preserve values if not provided
-    const existing = await getTopicConfig(topic);
-    const newColor = color !== undefined ? color : existing.color;
-
-    await database.runAsync(
-        'INSERT OR REPLACE INTO topic_configs (topic, allow_background, color) VALUES (?, ?, ?)',
-        topic, allowBackground ? 1 : 0, newColor || null
+    // Check if exists
+    const existing = await db.getOptional<TopicConfig>(
+        'SELECT * FROM topic_configs WHERE user_id = ? AND topic = ?',
+        [userId, topic]
     );
+
+    if (existing) {
+        const newColor = color !== undefined ? color : existing.color;
+        await db.execute(
+            'UPDATE topic_configs SET allow_background = ?, color = ?, updated_at = ? WHERE id = ?',
+            [allowBackground ? 1 : 0, newColor, now, existing.id]
+        );
+    } else {
+        const id = uuid();
+        await db.execute(
+            `INSERT INTO topic_configs (id, user_id, topic, allow_background, color, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?)`,
+            [id, userId, topic, allowBackground ? 1 : 0, color || null, now, now]
+        );
+    }
 }
 
 export async function getTopicConfig(topic: string): Promise<{ allowBackground: boolean; color: string | null }> {
-    const database = await getDatabase();
-    const result = await database.getFirstAsync<{ allow_background: number; color: string | null }>(
-        'SELECT allow_background, color FROM topic_configs WHERE topic = ?',
-        topic
+    const userId = getCurrentUserId();
+    const result = await db.getOptional<TopicConfig>(
+        'SELECT * FROM topic_configs WHERE user_id = ? AND topic = ?',
+        [userId, topic]
     );
     return { allowBackground: !!result?.allow_background, color: result?.color || null };
 }
 
+// ==================== APP STATE (for session recovery) ====================
+
+export async function setAppState(key: string, value: string): Promise<void> {
+    // Store in AsyncStorage or similar - PowerSync doesn't sync app_state
+    // For now, using a simple in-memory store
+    appStateStore.set(key, value);
+}
+
+export async function getAppState(key: string): Promise<string | null> {
+    return appStateStore.get(key) || null;
+}
+
+const appStateStore = new Map<string, string>();
+
 export async function recoverUnfinishedSession(): Promise<boolean> {
-    const database = await getDatabase();
+    const userId = getCurrentUserId();
+
     // Find any session that has no end_time
-    const unfinishedSession = await database.getFirstAsync<Session>(
-        'SELECT * FROM sessions WHERE end_time IS NULL ORDER BY start_time DESC LIMIT 1'
+    const unfinished = await db.getOptional<Session>(
+        'SELECT * FROM sessions WHERE user_id = ? AND end_time IS NULL AND is_deleted = 0 ORDER BY start_time DESC LIMIT 1',
+        [userId]
     );
 
-    if (unfinishedSession) {
-        // We found a session that wasn't closed properly.
-        // We will forcefully close it using the last known active timestamp if available,
-        // or just close it with a reasonable fallback (e.g., +1 minute from start if completely unknown? 
-        // Or better: check if we have a saved 'last_active_timestamp').
+    if (unfinished) {
+        const lastActiveStr = await getAppState('last_active_timestamp');
+        let endTimeStr = new Date().toISOString();
 
-        try {
-            const lastActiveStr = await getAppState('last_active_timestamp');
-            let endTimeStr = new Date().toISOString();
-
-            if (lastActiveStr) {
-                // Use the last active time as the end time
-                endTimeStr = new Date(parseInt(lastActiveStr)).toISOString();
-            } else {
-                // If no last active time, this is tricky. We might just use current time 
-                // BUT that would mean the user gets "credit" for time they weren't actually in app 
-                // if they just killed it.
-                // However, without background fetch, we can't know when they killed it.
-                // Best effort: Use a small buffer from start or simply close it at start time (0 duration)
-                // to avoid cheating.
-                // FOR NOW: Let's assume valid session until 'last known time'.
-                // If last known time is missing, maybe default to start_time to be safe?
-                endTimeStr = unfinishedSession.start_time; // 0 duration
-            }
-
-            const start = new Date(unfinishedSession.start_time).getTime();
-            const end = new Date(endTimeStr).getTime();
-            // Ensure non-negative
-            const durationSeconds = Math.max(0, Math.floor((end - start) / 1000));
-
-            await database.runAsync(
-                'UPDATE sessions SET end_time = ?, duration_seconds = ? WHERE id = ?',
-                endTimeStr, durationSeconds, unfinishedSession.id
-            );
-            return true;
-        } catch (e) {
-            console.error("Failed to recover session", e);
+        if (lastActiveStr) {
+            endTimeStr = new Date(parseInt(lastActiveStr)).toISOString();
+        } else {
+            endTimeStr = unfinished.start_time; // 0 duration if no last active
         }
+
+        const start = new Date(unfinished.start_time).getTime();
+        const end = new Date(endTimeStr).getTime();
+        const durationSeconds = Math.max(0, Math.floor((end - start) / 1000));
+
+        await db.execute(
+            'UPDATE sessions SET end_time = ?, duration_seconds = ?, updated_at = ? WHERE id = ?',
+            [endTimeStr, durationSeconds, new Date().toISOString(), unfinished.id]
+        );
+        return true;
     }
     return false;
 }
+
+// ==================== HOOKS (Removed - use PowerSync hooks instead) ====================
+// useDatabase() hook removed - PowerSync handles initialization via PowerSyncProvider

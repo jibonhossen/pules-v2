@@ -4,7 +4,7 @@ import { StatsCard } from '@/components/StatsCard';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getDailyStats, getDatabase, getStatsForRange, Session } from '@/lib/database';
+import { getDailyStats, getSessionsByDateRange, getStatsForRange, type Session } from '@/lib/database';
 import { formatDuration } from '@/lib/utils';
 import { useSessionStore } from '@/store/sessions';
 import { useRouter } from 'expo-router';
@@ -16,16 +16,10 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 type ViewMode = 'week' | 'month';
 
 async function getDailyMapForRange(startDate: string, endDate: string): Promise<Map<string, number>> {
-    const database = await getDatabase();
-    const sessions = await database.getAllAsync<Session>(
-        `SELECT * FROM sessions 
-         WHERE start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
-         ORDER BY start_time`,
-        [startDate, endDate]
-    );
+    const sessions = await getSessionsByDateRange(startDate, endDate);
 
     const dailyMap = new Map<string, number>();
-    sessions.forEach((session) => {
+    sessions.forEach((session: Session) => {
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];

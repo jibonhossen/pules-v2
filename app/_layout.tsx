@@ -1,9 +1,8 @@
 
 import { NAV_THEME, PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useDatabase } from '@/lib/database';
+import { PowerSyncProvider } from '@/lib/powersync/PowerSyncProvider';
 import { useSessionStore } from '@/store/sessions';
-import { useSyncStore } from '@/store/sync';
 import { ClerkLoaded, ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import {
@@ -13,7 +12,6 @@ import {
   Poppins_700Bold,
   useFonts,
 } from '@expo-google-fonts/poppins';
-import NetInfo from '@react-native-community/netinfo';
 import { ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -40,16 +38,14 @@ function LoadingScreen() {
 }
 
 // Component to handle auth-based routing
-// User must sign in on first launch for cloud sync
 function InitialLayout() {
   const { isSignedIn, isLoaded } = useAuth();
   const { user } = useUser();
   const segments = useSegments();
   const router = useRouter();
   const setUserId = useSessionStore((state) => state.setUserId);
-  const sync = useSyncStore((state) => state.sync);
 
-  // Sync user ID to session store for cloud sync
+  // Sync user ID to session store - PowerSync handles cloud sync automatically
   React.useEffect(() => {
     if (user?.id) {
       setUserId(user.id);
@@ -57,24 +53,6 @@ function InitialLayout() {
       setUserId(null);
     }
   }, [user?.id, setUserId]);
-
-  // Monitor network state and auto-sync when online
-  React.useEffect(() => {
-    if (!user?.id) return;
-
-    // Sync on mount
-    sync(user.id);
-
-    // Sync when network state changes to connected
-    const unsubscribe = NetInfo.addEventListener(state => {
-      if (state.isConnected && state.isInternetReachable) {
-        console.log('[Sync] Network connected, triggering sync...');
-        sync(user.id);
-      }
-    });
-
-    return () => unsubscribe();
-  }, [user?.id, sync]);
 
   React.useEffect(() => {
     if (!isLoaded) return;
@@ -103,7 +81,6 @@ function InitialLayout() {
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
-  const { isReady, error } = useDatabase();
   const [fontsLoaded] = useFonts({
     Poppins_400Regular,
     Poppins_500Medium,
@@ -111,9 +88,8 @@ export default function RootLayout() {
     Poppins_700Bold,
   });
 
-  const isAppReady = isReady && fontsLoaded;
-
-  if (!isAppReady && !error) {
+  // Show loading while fonts load - PowerSync init is handled by PowerSyncProvider
+  if (!fontsLoaded) {
     return (
       <GestureHandlerRootView style={styles.root}>
         <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
@@ -131,12 +107,14 @@ export default function RootLayout() {
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
       <ClerkLoaded>
-        <GestureHandlerRootView style={styles.root}>
-          <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
-            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-            <InitialLayout />
-          </ThemeProvider>
-        </GestureHandlerRootView>
+        <PowerSyncProvider>
+          <GestureHandlerRootView style={styles.root}>
+            <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
+              <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+              <InitialLayout />
+            </ThemeProvider>
+          </GestureHandlerRootView>
+        </PowerSyncProvider>
       </ClerkLoaded>
     </ClerkProvider>
   );

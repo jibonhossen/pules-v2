@@ -42,7 +42,7 @@ function SwipeableSessionCard({
     onDelete,
 }: {
     session: Session;
-    onContinue: (topic: string, folderId: number | null) => void;
+    onContinue: (topic: string, folderId: string | null) => void;
     onTap: (session: Session) => void;
     onDelete: (session: Session) => void;
 }) {
@@ -195,8 +195,8 @@ function SwipeableSessionCard({
 interface SessionHistorySheetProps {
     sheetRef: React.RefObject<BottomSheet | null>;
     topic: string | null;
-    folderId: number | null;
-    onContinue: (topic: string, folderId: number | null) => void;
+    folderId: string | null;
+    onContinue: (topic: string, folderId: string | null) => void;
     onTopicRenamed: () => void;
 }
 
@@ -390,13 +390,13 @@ function SessionHistorySheet({
 }
 
 interface SessionListProps {
-    onStartSession: (topic: string, folderId: number | null) => void;
+    onStartSession: (topic: string, folderId: string | null) => void;
 }
 
 export function SessionList({ onStartSession }: SessionListProps) {
     const { todaySessions, loadSessions } = useSessionStore();
     const [selectedTopic, setSelectedTopic] = React.useState<string | null>(null);
-    const [selectedFolderId, setSelectedFolderId] = React.useState<number | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = React.useState<string | null>(null);
     const sheetRef = React.useRef<BottomSheet>(null);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
@@ -411,7 +411,7 @@ export function SessionList({ onStartSession }: SessionListProps) {
         sheetRef.current?.snapToIndex(0);
     };
 
-    const handleContinue = (topic: string, folderId: number | null) => {
+    const handleContinue = (topic: string, folderId: string | null) => {
         onStartSession(topic, folderId);
     };
 

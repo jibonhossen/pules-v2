@@ -18,9 +18,7 @@ import {
     upsertTopicConfig,
     type Folder,
 } from '@/lib/database';
-import { syncAll } from '@/lib/sync-engine';
 import { useSessionStore } from '@/store/sessions';
-import { useAuth } from '@clerk/clerk-expo';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { FolderOpen, Plus } from 'lucide-react-native';
@@ -53,7 +51,6 @@ export default function FoldersScreen() {
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const router = useRouter();
     const { startTimer, isRunning, currentTopic } = useSessionStore();
-    const { userId } = useAuth();
 
     const [folders, setFolders] = React.useState<FolderWithData[]>([]);
     const [unfolderedTopics, setUnfolderedTopics] = React.useState<TopicData[]>([]);
@@ -61,7 +58,7 @@ export default function FoldersScreen() {
     const [modalVisible, setModalVisible] = React.useState(false);
     const [editingFolder, setEditingFolder] = React.useState<Folder | null>(null);
     const [addTopicModalVisible, setAddTopicModalVisible] = React.useState(false);
-    const [selectedFolderForTopic, setSelectedFolderForTopic] = React.useState<{ id: number; name: string; color: string } | null>(null);
+    const [selectedFolderForTopic, setSelectedFolderForTopic] = React.useState<{ id: string; name: string; color: string } | null>(null);
     const [moveTopicModalVisible, setMoveTopicModalVisible] = React.useState(false);
     const [topicToMove, setTopicToMove] = React.useState('');
     const [renameTopicModalVisible, setRenameTopicModalVisible] = React.useState(false);
@@ -99,12 +96,7 @@ export default function FoldersScreen() {
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
         try {
-            if (userId) {
-                const result = await syncAll(userId);
-                if (result.error) {
-                    Alert.alert('Sync Warning', 'Part of the sync failed: ' + result.error);
-                }
-            }
+            // PowerSync handles sync automatically
             await loadData();
         } catch (e) {
             console.error('Refresh failed', e);
@@ -112,7 +104,7 @@ export default function FoldersScreen() {
         } finally {
             setRefreshing(false);
         }
-    }, [loadData, userId]);
+    }, [loadData]);
 
     const handleCreateFolder = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
@@ -151,7 +143,7 @@ export default function FoldersScreen() {
         router.push(`/analytics/folder/${folder.id}`);
     };
 
-    const handleStartTopic = async (topic: string, folderId?: number) => {
+    const handleStartTopic = async (topic: string, folderId?: string) => {
         if (isRunning) {
             Alert.alert(
                 'Start New Session?',
@@ -178,7 +170,7 @@ export default function FoldersScreen() {
         router.push(`/analytics/topic/${encodeURIComponent(topic)}`);
     };
 
-    const handleAddTopic = (folderId: number, folderName: string) => {
+    const handleAddTopic = (folderId: string, folderName: string) => {
         const folder = folders.find(f => f.id === folderId);
         setSelectedFolderForTopic({
             id: folderId,
@@ -212,7 +204,7 @@ export default function FoldersScreen() {
         setMoveTopicModalVisible(true);
     };
 
-    const handleMoveTopic = async (folderId: number) => {
+    const handleMoveTopic = async (folderId: string) => {
         if (topicToMove) {
             await moveTopicToFolder(topicToMove, folderId);
             await loadData();

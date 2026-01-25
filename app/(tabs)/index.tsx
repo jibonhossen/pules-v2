@@ -180,6 +180,7 @@ export default function TimerScreen() {
         elapsedSeconds,
         currentTopic,
         currentFolderName,
+        userId,
         startTimer,
         stopTimer,
         pauseTimer,
@@ -206,11 +207,13 @@ export default function TimerScreen() {
         };
     }, [isRunning, isPaused, tick]);
 
-    // Load data on mount
+    // Load data when user becomes available
     React.useEffect(() => {
-        loadSessions();
-        loadStats();
-    }, []);
+        if (userId) {
+            loadSessions();
+            loadStats();
+        }
+    }, [userId]);
 
     // Sync local topic
     React.useEffect(() => {
@@ -257,7 +260,7 @@ export default function TimerScreen() {
         }
     };
 
-    const handleContinueSession = async (sessionTopic: string, folderId: number | null) => {
+    const handleContinueSession = async (sessionTopic: string, folderId: string | null) => {
         if (isRunning) {
             Alert.alert(
                 'Start New Session?',
