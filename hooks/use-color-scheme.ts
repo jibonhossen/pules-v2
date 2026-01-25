@@ -1,5 +1,6 @@
 import { useColorScheme as useRNColorScheme } from 'react-native';
 import { useCallback, useState, useEffect } from 'react';
+import { getAppState, setAppState } from '@/lib/database';
 
 type ColorScheme = 'light' | 'dark';
 
@@ -18,6 +19,25 @@ export function useColorScheme() {
     useEffect(() => {
         const listener = () => forceUpdate({});
         listeners.add(listener);
+
+        // Load saved theme
+        const loadTheme = async () => {
+            try {
+                const saved = await getAppState('theme_preference');
+                if (saved === 'light' || saved === 'dark') {
+                    if (overrideScheme !== saved) {
+                        overrideScheme = saved;
+                        notifyListeners();
+                    }
+                }
+            } catch (e) {
+                // Ignore error (DB might not be ready yet, or first run)
+                console.log('Failed to load theme preference', e);
+            }
+        };
+
+        loadTheme();
+
         return () => {
             listeners.delete(listener);
         };
@@ -26,13 +46,16 @@ export function useColorScheme() {
     const colorScheme: ColorScheme = overrideScheme ?? systemScheme ?? 'dark';
 
     const toggleColorScheme = useCallback(() => {
-        overrideScheme = colorScheme === 'dark' ? 'light' : 'dark';
+        const newScheme = colorScheme === 'dark' ? 'light' : 'dark';
+        overrideScheme = newScheme;
         notifyListeners();
+        setAppState('theme_preference', newScheme).catch((e) => console.error('Failed to save theme', e));
     }, [colorScheme]);
 
     const setColorScheme = useCallback((scheme: ColorScheme) => {
         overrideScheme = scheme;
         notifyListeners();
+        setAppState('theme_preference', scheme).catch((e) => console.error('Failed to save theme', e));
     }, []);
 
     return {

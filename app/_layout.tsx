@@ -1,18 +1,24 @@
-import { CustomTabBar } from '@/components/CustomTabBar';
-import { useDatabase } from '@/lib/database';
+
 import { NAV_THEME, PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useDatabase } from '@/lib/database';
+import {
+  Poppins_400Regular,
+  Poppins_500Medium,
+  Poppins_600SemiBold,
+  Poppins_700Bold,
+  useFonts,
+} from '@expo-google-fonts/poppins';
 import { ThemeProvider } from '@react-navigation/native';
-import { Slot } from 'expo-router';
+import { Stack } from 'expo-router'; // Changed from Slot to Stack
 import { StatusBar } from 'expo-status-bar';
 import * as React from 'react';
-import { ActivityIndicator, View, StyleSheet } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
-import { SafeAreaView } from 'react-native-safe-area-context';
 import 'react-native-reanimated';
 
 export {
-  ErrorBoundary,
+  ErrorBoundary
 } from 'expo-router';
 
 function LoadingScreen() {
@@ -28,10 +34,17 @@ function LoadingScreen() {
 
 export default function RootLayout() {
   const { colorScheme } = useColorScheme();
-  const colors = PULSE_COLORS[colorScheme ?? 'dark'];
   const { isReady, error } = useDatabase();
+  const [fontsLoaded] = useFonts({
+    Poppins_400Regular,
+    Poppins_500Medium,
+    Poppins_600SemiBold,
+    Poppins_700Bold,
+  });
 
-  if (!isReady && !error) {
+  const isAppReady = isReady && fontsLoaded;
+
+  if (!isAppReady && !error) {
     return (
       <GestureHandlerRootView style={styles.root}>
         <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
@@ -46,12 +59,11 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
         <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-        <SafeAreaView style={[styles.safeArea, { backgroundColor: colors.background }]} edges={['top']}>
-          <View style={styles.content}>
-            <Slot />
-          </View>
-          <CustomTabBar />
-        </SafeAreaView>
+        <Stack>
+          <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+          <Stack.Screen name="analytics/folder/[id]" options={{ presentation: 'card', headerShown: false }} />
+          <Stack.Screen name="analytics/topic/[topic]" options={{ presentation: 'card', headerShown: false }} />
+        </Stack>
       </ThemeProvider>
     </GestureHandlerRootView>
   );

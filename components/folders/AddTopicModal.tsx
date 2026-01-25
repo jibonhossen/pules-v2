@@ -1,15 +1,17 @@
+import { TOPIC_COLORS } from '@/components/TopicColorPicker';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import * as Haptics from 'expo-haptics';
 import { X } from 'lucide-react-native';
 import * as React from 'react';
-import * as Haptics from 'expo-haptics';
 import {
     Modal,
     Pressable,
-    TextInput,
-    View,
     StyleSheet,
+    Switch,
+    TextInput,
+    View
 } from 'react-native';
 
 interface AddTopicModalProps {
@@ -17,7 +19,7 @@ interface AddTopicModalProps {
     folderName: string;
     folderColor: string;
     onClose: () => void;
-    onSave: (topicName: string) => void;
+    onSave: (topicName: string, allowBackground: boolean, color: string) => void;
 }
 
 export function AddTopicModal({
@@ -31,17 +33,21 @@ export function AddTopicModal({
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
 
     const [topicName, setTopicName] = React.useState('');
+    const [allowBackground, setAllowBackground] = React.useState(false);
+    const [selectedColor, setSelectedColor] = React.useState<string>(folderColor);
 
     React.useEffect(() => {
         if (visible) {
             setTopicName('');
+            setAllowBackground(false);
+            setSelectedColor(folderColor);
         }
-    }, [visible]);
+    }, [visible, folderColor]);
 
     const handleSave = () => {
         if (!topicName.trim()) return;
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-        onSave(topicName.trim());
+        onSave(topicName.trim(), allowBackground, selectedColor);
         onClose();
     };
 
@@ -82,9 +88,43 @@ export function AddTopicModal({
                                 {
                                     backgroundColor: colors.muted,
                                     color: colors.foreground,
-                                    borderColor: folderColor,
+                                    borderColor: selectedColor,
                                 },
                             ]}
+                        />
+                    </View>
+
+                    {/* Color Palette */}
+                    <View style={styles.colorContainer}>
+                        <Text style={[styles.optionTitle, { color: colors.foreground, marginBottom: 12 }]}>Color</Text>
+                        <View style={styles.colorGrid}>
+                            {TOPIC_COLORS.map((color) => (
+                                <Pressable
+                                    key={color}
+                                    onPress={() => setSelectedColor(color)}
+                                    style={[
+                                        styles.colorButton,
+                                        { backgroundColor: color },
+                                        selectedColor === color && [styles.selectedColor, { borderColor: colors.foreground }]
+                                    ]}
+                                />
+                            ))}
+                        </View>
+                    </View>
+
+                    {/* Options */}
+                    <View style={styles.optionContainer}>
+                        <View style={{ flex: 1 }}>
+                            <Text style={[styles.optionTitle, { color: colors.foreground }]}>Allow Background</Text>
+                            <Text variant="muted" style={styles.optionDescription}>
+                                Timer continues when you switch apps (e.g. for Online Class).
+                            </Text>
+                        </View>
+                        <Switch
+                            value={allowBackground}
+                            onValueChange={setAllowBackground}
+                            trackColor={{ false: colors.muted, true: selectedColor }}
+                            thumbColor={'#fff'}
                         />
                     </View>
 
@@ -102,7 +142,7 @@ export function AddTopicModal({
                             style={[
                                 styles.button,
                                 styles.saveButton,
-                                { backgroundColor: folderColor, opacity: topicName.trim() ? 1 : 0.5 },
+                                { backgroundColor: selectedColor, opacity: topicName.trim() ? 1 : 0.5 },
                             ]}
                         >
                             <Text style={{ color: '#fff', fontWeight: '600' }}>
@@ -116,38 +156,41 @@ export function AddTopicModal({
     );
 }
 
+
+
 const styles = StyleSheet.create({
     overlay: {
         flex: 1,
         backgroundColor: 'rgba(0, 0, 0, 0.6)',
         justifyContent: 'center',
-        alignItems: 'center',
         padding: 24,
     },
     modal: {
+        borderRadius: 24,
+        padding: 24,
         width: '100%',
-        borderRadius: 20,
-        padding: 20,
     },
     header: {
         flexDirection: 'row',
-        alignItems: 'flex-start',
         justifyContent: 'space-between',
-        marginBottom: 20,
+        alignItems: 'flex-start',
+        marginBottom: 24,
     },
     title: {
         fontSize: 20,
         fontWeight: '700',
+        marginBottom: 4,
     },
     subtitle: {
         fontSize: 14,
-        marginTop: 2,
     },
     closeButton: {
         padding: 4,
+        marginTop: -4,
+        marginRight: -4,
     },
     inputContainer: {
-        marginBottom: 20,
+        marginBottom: 24,
     },
     input: {
         borderRadius: 12,
@@ -156,16 +199,50 @@ const styles = StyleSheet.create({
         fontSize: 16,
         borderWidth: 2,
     },
+    colorContainer: {
+        marginBottom: 24,
+    },
+    optionTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+    },
+    colorGrid: {
+        flexDirection: 'row',
+        flexWrap: 'wrap',
+        gap: 12,
+    },
+    colorButton: {
+        width: 36,
+        height: 36,
+        borderRadius: 18,
+    },
+    selectedColor: {
+        borderWidth: 3,
+    },
+    optionContainer: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'space-between',
+        marginBottom: 32,
+    },
+    optionDescription: {
+        fontSize: 12,
+        marginTop: 4,
+        paddingRight: 16,
+    },
     actions: {
         flexDirection: 'row',
         gap: 12,
     },
     button: {
         flex: 1,
-        paddingVertical: 14,
-        borderRadius: 12,
+        height: 52,
+        borderRadius: 16,
         alignItems: 'center',
+        justifyContent: 'center',
     },
-    cancelButton: {},
-    saveButton: {},
+    cancelButton: {
+    },
+    saveButton: {
+    },
 });

@@ -1,11 +1,12 @@
+import { useSwipeContext } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { formatDuration } from '@/lib/utils';
-import { ChevronDown, ChevronRight, BarChart3, Play, Trash2, FolderInput } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
-import { Alert, Pressable, View, StyleSheet } from 'react-native';
+import { BarChart3, Edit3, FolderInput, Play } from 'lucide-react-native';
+import * as React from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
@@ -23,10 +24,12 @@ interface TopicItemProps {
     totalTime: number;
     sessionCount: number;
     lastSession: string;
+    color?: string | null;
     onStart: (topic: string) => void;
     onAnalytics: (topic: string) => void;
     onDelete: (topic: string) => void;
     onMove?: (topic: string) => void;
+    onRename?: (topic: string) => void;
 }
 
 export function TopicItem({
@@ -34,41 +37,51 @@ export function TopicItem({
     totalTime,
     sessionCount,
     lastSession,
+    color,
     onStart,
     onAnalytics,
     onDelete,
     onMove,
+    onRename,
 }: TopicItemProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
 
     const translateX = useSharedValue(0);
     const isOpen = useSharedValue(false);
+    const { registerOpenItem, closeCurrent } = useSwipeContext() || {};
+
+    const handleClose = () => {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
+        isOpen.value = false;
+    };
+
+    const handleRegisterOpen = () => {
+        if (registerOpenItem) {
+            registerOpenItem(topic, handleClose);
+        }
+    };
 
     const panGesture = Gesture.Pan()
         .activeOffsetX([-10, 10])
         .onUpdate((event) => {
             if (isOpen.value) {
-                // If open, allow dragging back to 0
-                // If currently deleting (negative tx), allow dragging back to 0 or further
-                // If currently continuing (positive tx), allow dragging back to 0 or further
-                translateX.value = event.translationX;
+                // If open (at ACTION_WIDTH), allow dragging left to close (towards 0)
+                const target = ACTION_WIDTH + event.translationX;
+                translateX.value = Math.max(0, Math.min(ACTION_WIDTH, target));
             } else {
-                // Allow swipe in both directions
-                translateX.value = event.translationX;
+                // Closed state - only swipe right (positive)
+                const val = event.translationX;
+                translateX.value = Math.max(0, Math.min(ACTION_WIDTH, val));
             }
         })
         .onEnd((event) => {
-            // Delete (Swipe Left -> Right side exposed) - translateX negative
-            if (translateX.value < -ACTION_WIDTH / 2 || event.velocityX < -500) {
-                translateX.value = withTiming(-ACTION_WIDTH, { duration: 200 });
-                isOpen.value = true;
-                runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
-                // Continue (Swipe Right -> Left side exposed) - translateX positive
-            } else if (translateX.value > ACTION_WIDTH / 2 || event.velocityX > 500) {
+            // Continue (Swipe Right -> Left side exposed) - translateX positive
+            if (translateX.value > ACTION_WIDTH / 2 || event.velocityX > 500) {
                 translateX.value = withTiming(ACTION_WIDTH, { duration: 200 });
                 isOpen.value = true;
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                runOnJS(handleRegisterOpen)();
             } else {
                 translateX.value = withTiming(0, { duration: 200 });
                 isOpen.value = false;
@@ -78,8 +91,7 @@ export function TopicItem({
     const tapGesture = Gesture.Tap()
         .onEnd(() => {
             if (isOpen.value) {
-                translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-                isOpen.value = false;
+                runOnJS(handleClose)();
             }
         });
 
@@ -99,38 +111,17 @@ export function TopicItem({
         transform: [{ translateX: translateX.value }],
     }));
 
-    const deleteStyle = useAnimatedStyle(() => ({
+    // Continue Action (Right Swipe -> Reveals Left Side)
+    // Interpolate on Positive values [0, 70]
+    const continueStyle = useAnimatedStyle(() => ({
         opacity: interpolate(translateX.value, [0, ACTION_WIDTH], [0, 1]),
         transform: [{ translateX: interpolate(translateX.value, [0, ACTION_WIDTH], [-ACTION_WIDTH, 0]) }]
     }));
 
-    const continueStyle = useAnimatedStyle(() => ({
-        opacity: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0]),
-        transform: [{ translateX: interpolate(translateX.value, [-ACTION_WIDTH, 0], [0, ACTION_WIDTH]) }]
-    }));
-
     const handleContinue = () => {
-        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-        isOpen.value = false;
+        handleClose();
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onStart(topic);
-    };
-
-    const handleDelete = () => {
-        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
-        isOpen.value = false;
-        Alert.alert(
-            'Delete Topic',
-            `Delete all sessions for "${topic}"?`,
-            [
-                { text: 'Cancel', style: 'cancel' },
-                {
-                    text: 'Delete',
-                    style: 'destructive',
-                    onPress: () => onDelete(topic),
-                },
-            ]
-        );
     };
 
     const formatLastSession = (dateStr: string) => {
@@ -146,26 +137,12 @@ export function TopicItem({
 
     return (
         <View style={styles.container}>
-            {/* Delete action */}
-            {/* Delete action (Left side) */}
-            <Animated.View
-                style={[
-                    deleteStyle,
-                    styles.actionButton,
-                    { left: 0, backgroundColor: colors.destructive, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
-                ]}
-            >
-                <Pressable onPress={handleDelete} style={styles.actionPressable}>
-                    <Trash2 size={18} color="#fff" />
-                </Pressable>
-            </Animated.View>
-
-            {/* Continue action (Right side) */}
+            {/* Continue action (Left side, revealed by Right Swipe) */}
             <Animated.View
                 style={[
                     continueStyle,
                     styles.actionButton,
-                    { right: 0, backgroundColor: colors.primary, borderTopRightRadius: 12, borderBottomRightRadius: 12 },
+                    { left: 0, backgroundColor: colors.primary, borderTopLeftRadius: 12, borderBottomLeftRadius: 12 },
                 ]}
             >
                 <Pressable onPress={handleContinue} style={styles.actionPressable}>
@@ -182,8 +159,8 @@ export function TopicItem({
                         { backgroundColor: colors.muted },
                     ]}
                 >
-                    <View style={styles.playIcon}>
-                        <Play size={14} color={colors.primary} fill={colors.primary} />
+                    <View style={[styles.playIcon, { backgroundColor: color ? `${color}20` : 'rgba(20, 184, 166, 0.15)' }]}>
+                        <Play size={14} color={color || colors.primary} fill={color || colors.primary} />
                     </View>
                     <View style={styles.content}>
                         <Text style={[styles.topicName, { color: colors.foreground }]} numberOfLines={1}>
@@ -194,6 +171,14 @@ export function TopicItem({
                         </Text>
                     </View>
                     <View style={{ flexDirection: 'row', gap: 8 }}>
+                        {onRename && (
+                            <Pressable
+                                onPress={() => onRename(topic)}
+                                style={[styles.analyticsButton, { backgroundColor: `${colors.primary}20` }]}
+                            >
+                                <Edit3 size={16} color={colors.primary} />
+                            </Pressable>
+                        )}
                         {onMove && (
                             <Pressable
                                 onPress={() => onMove(topic)}

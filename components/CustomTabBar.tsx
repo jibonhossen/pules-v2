@@ -1,104 +1,115 @@
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { usePathname, useRouter } from 'expo-router';
+import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
 import { BarChart3, FolderOpen, Clock } from 'lucide-react-native';
 import * as React from 'react';
-import { Pressable, View, StyleSheet } from 'react-native';
+import { Pressable, View, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withTiming,
-} from 'react-native-reanimated';
 
-const TABS = [
-    { name: 'index', label: 'Timer', icon: Clock, href: '/' },
-    { name: 'calendar', label: 'Folders', icon: FolderOpen, href: '/calendar' },
-    { name: 'reports', label: 'Reports', icon: BarChart3, href: '/reports' },
-] as const;
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-interface TabItemProps {
-    tab: (typeof TABS)[number];
-    isActive: boolean;
-    onPress: () => void;
+function TabItem({
+    route,
+    index,
+    state,
+    descriptors,
+    navigation,
+    colors
+}: {
+    route: any;
+    index: number;
+    state: any;
+    descriptors: any;
+    navigation: any;
     colors: typeof PULSE_COLORS.dark;
-}
+}) {
+    const { options } = descriptors[route.key];
+    const label =
+        options.tabBarLabel !== undefined
+            ? options.tabBarLabel
+            : options.title !== undefined
+                ? options.title
+                : route.name;
 
-function TabItem({ tab, isActive, onPress, colors }: TabItemProps) {
-    const scale = useSharedValue(1);
-    const Icon = tab.icon;
+    const isFocused = state.index === index;
 
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-    }));
+    // Map route names to icons
+    const Icon = React.useMemo(() => {
+        switch (route.name) {
+            case 'index': return Clock;
+            case 'folders': return FolderOpen;
+            case 'reports': return BarChart3;
+            default: return Clock;
+        }
+    }, [route.name]);
 
-    const handlePressIn = () => {
-        scale.value = withTiming(0.95, { duration: 100 });
+    const onPress = () => {
+        const event = navigation.emit({
+            type: 'tabPress',
+            target: route.key,
+            canPreventDefault: true,
+        });
+
+        if (!isFocused && !event.defaultPrevented) {
+            Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
+            navigation.navigate(route.name, route.params);
+        }
     };
 
-    const handlePressOut = () => {
-        scale.value = withTiming(1, { duration: 100 });
-    };
-
-    const handlePress = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onPress();
+    const onLongPress = () => {
+        navigation.emit({
+            type: 'tabLongPress',
+            target: route.key,
+        });
     };
 
     return (
-        <AnimatedPressable
-            onPress={handlePress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            style={[animatedStyle, styles.tabItem]}
+        <Pressable
+            accessibilityRole="button"
+            accessibilityState={isFocused ? { selected: true } : {}}
+            accessibilityLabel={options.tabBarAccessibilityLabel}
+            testID={options.tabBarTestID}
+            onPress={onPress}
+            onLongPress={onLongPress}
+            android_ripple={{ color: 'transparent' }}
+            style={({ pressed }) => [
+                styles.tabItem,
+                { opacity: pressed ? 0.7 : 1 }
+            ]}
         >
             <View
                 style={[
                     styles.tabContent,
-                    isActive && {
-                        backgroundColor: `${colors.primary}20`,
+                    isFocused && {
+                        backgroundColor: `${colors.primary}15`,
                         borderRadius: 16,
+                        overflow: 'hidden',
                     },
                 ]}
             >
                 <Icon
                     size={22}
-                    color={isActive ? colors.primary : colors.mutedForeground}
-                    strokeWidth={isActive ? 2.5 : 2}
+                    color={isFocused ? colors.primary : colors.mutedForeground}
+                    strokeWidth={isFocused ? 2.5 : 2}
                 />
                 <Text
                     style={[
                         styles.tabLabel,
-                        { color: isActive ? colors.primary : colors.mutedForeground },
-                        isActive && styles.tabLabelActive,
+                        { color: isFocused ? colors.primary : colors.mutedForeground },
+                        isFocused && styles.tabLabelActive,
                     ]}
                 >
-                    {tab.label}
+                    {label}
                 </Text>
             </View>
-        </AnimatedPressable>
+        </Pressable>
     );
 }
 
-export function CustomTabBar() {
-    const pathname = usePathname();
-    const router = useRouter();
+export function CustomTabBar({ state, descriptors, navigation }: BottomTabBarProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const insets = useSafeAreaInsets();
-
-    const getActiveTab = () => {
-        if (pathname === '/' || pathname === '/index') return 'index';
-        if (pathname.includes('/calendar')) return 'calendar';
-        if (pathname.includes('/reports')) return 'reports';
-        return 'index';
-    };
-
-    const activeTab = getActiveTab();
 
     return (
         <View
@@ -111,12 +122,14 @@ export function CustomTabBar() {
                 },
             ]}
         >
-            {TABS.map((tab) => (
+            {state.routes.map((route, index) => (
                 <TabItem
-                    key={tab.name}
-                    tab={tab}
-                    isActive={activeTab === tab.name}
-                    onPress={() => router.push(tab.href as any)}
+                    key={route.key}
+                    route={route}
+                    index={index}
+                    state={state}
+                    descriptors={descriptors}
+                    navigation={navigation}
                     colors={colors}
                 />
             ))}
@@ -127,25 +140,34 @@ export function CustomTabBar() {
 const styles = StyleSheet.create({
     container: {
         flexDirection: 'row',
-        borderTopWidth: 1,
-        paddingTop: 8,
+        paddingTop: 12,
+        shadowColor: "#000",
+        shadowOffset: {
+            width: 0,
+            height: -2,
+        },
+        shadowOpacity: 0.05,
+        shadowRadius: 8,
+        elevation: 0,
+        borderTopWidth: StyleSheet.hairlineWidth,
     },
     tabItem: {
         flex: 1,
         alignItems: 'center',
         justifyContent: 'center',
-        paddingVertical: 8,
     },
     tabContent: {
         alignItems: 'center',
         justifyContent: 'center',
-        paddingHorizontal: 20,
-        paddingVertical: 8,
+        paddingHorizontal: 16,
+        paddingVertical: 6,
+        borderRadius: 16,
+        overflow: 'hidden',
+        gap: 4,
     },
     tabLabel: {
-        marginTop: 4,
         fontSize: 12,
-        fontWeight: '500',
+        fontWeight: '500'
     },
     tabLabelActive: {
         fontWeight: '600',

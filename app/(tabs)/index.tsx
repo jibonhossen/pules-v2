@@ -1,21 +1,24 @@
 import { CircularTimer } from '@/components/CircularTimer';
 import { SessionList } from '@/components/SessionList';
+import { TopicColorPicker } from '@/components/TopicColorPicker';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useAppState } from '@/hooks/useAppState';
 import { useSessionStore } from '@/store/sessions';
-import { MoonStar, Play, Square, Sun, FolderOpen } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
+import { useLocalSearchParams, useRouter } from 'expo-router';
+import { FolderOpen, MoonStar, Palette, Pause, Play, Square, Sun } from 'lucide-react-native';
+import * as React from 'react';
 import {
+    Alert,
     Keyboard,
     KeyboardAvoidingView,
     Platform,
     Pressable,
-    TextInput,
-    TouchableWithoutFeedback,
-    View,
     StyleSheet,
+    TextInput,
+    View
 } from 'react-native';
 import Animated, {
     useAnimatedStyle,
@@ -97,17 +100,19 @@ function ThemeToggle() {
     );
 }
 
-function PlayButton({
-    isRunning,
+function TimerControlButton({
     onPress,
     disabled,
+    icon,
+    color,
+    style,
 }: {
-    isRunning: boolean;
     onPress: () => void;
     disabled?: boolean;
+    icon: React.ReactNode;
+    color: string;
+    style?: any;
 }) {
-    const { colorScheme } = useColorScheme();
-    const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const scale = useSharedValue(1);
 
     const animatedStyle = useAnimatedStyle(() => ({
@@ -123,9 +128,7 @@ function PlayButton({
     };
 
     const handlePress = () => {
-        Haptics.impactAsync(
-            isRunning ? Haptics.ImpactFeedbackStyle.Heavy : Haptics.ImpactFeedbackStyle.Medium
-        );
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
         onPress();
     };
 
@@ -139,50 +142,68 @@ function PlayButton({
                 animatedStyle,
                 styles.playButton,
                 {
-                    backgroundColor: isRunning ? colors.destructive : colors.primary,
-                    shadowColor: isRunning ? colors.destructive : colors.primary,
-                    opacity: disabled && !isRunning ? 0.5 : 1,
+                    backgroundColor: color,
+                    shadowColor: color,
+                    opacity: disabled ? 0.5 : 1,
                 },
+                style
             ]}
         >
-            {isRunning ? (
-                <Square size={22} color="#fff" fill="#fff" />
-            ) : (
-                <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
-            )}
+            {icon}
         </AnimatedPressable>
     );
 }
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 export default function TimerScreen() {
+    const router = useRouter(); // Added router
+    const params = useLocalSearchParams();
+    React.useEffect(() => {
+        if (params.mode === 'focus') {
+            setViewMode('focus');
+        }
+    }, [params.mode, params.t]);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
+    const insets = useSafeAreaInsets();
 
     const [viewMode, setViewMode] = React.useState<ViewMode>('focus');
     const [topic, setTopic] = React.useState('');
+    const [colorPickerVisible, setColorPickerVisible] = React.useState(false);
+    const [topicColor, setTopicColor] = React.useState<string | null>(null);
 
     const {
         isRunning,
+        isPaused,
         elapsedSeconds,
         currentTopic,
         currentFolderName,
         startTimer,
         stopTimer,
+        pauseTimer,
+        resumeTimer,
         tick,
         loadSessions,
         loadStats,
+        updateTopicColor,
+        onAppBackground,
+        onAppForeground,
     } = useSessionStore();
+
+    // Handle app state changes
+    useAppState(onAppBackground, onAppForeground);
 
     // Timer tick effect
     React.useEffect(() => {
         let interval: ReturnType<typeof setInterval> | undefined;
-        if (isRunning) {
+        if (isRunning && !isPaused) {
             interval = setInterval(tick, 1000);
         }
         return () => {
             if (interval) clearInterval(interval);
         };
-    }, [isRunning, tick]);
+    }, [isRunning, isPaused, tick]);
 
     // Load data on mount
     React.useEffect(() => {
@@ -190,62 +211,117 @@ export default function TimerScreen() {
         loadStats();
     }, []);
 
-    // Sync local topic with store's currentTopic
+    // Sync local topic
     React.useEffect(() => {
         if (currentTopic && isRunning) {
             setTopic(currentTopic);
         }
     }, [currentTopic, isRunning]);
 
-    const handlePlayPress = async () => {
-        if (isRunning) {
-            await stopTimer();
-            setTopic('');
-        } else if (topic.trim()) {
+    const handleStart = async () => {
+        if (topic.trim()) {
+            if (isRunning) {
+                Alert.alert(
+                    'Start New Session?',
+                    `"${currentTopic}" is currently running. Save it and start "${topic}"?`,
+                    [
+                        { text: 'Cancel', style: 'cancel' },
+                        {
+                            text: 'Start',
+                            style: 'default',
+                            onPress: async () => {
+                                await startTimer(topic.trim());
+                                Keyboard.dismiss();
+                            },
+                        },
+                    ]
+                );
+                return;
+            }
             await startTimer(topic.trim());
             Keyboard.dismiss();
         }
     };
 
-    const handleContinueSession = async (sessionTopic: string) => {
+    const handleStop = async () => {
+        await stopTimer();
+        setTopic('');
+    };
+
+    const handleTogglePause = () => {
+        if (isPaused) {
+            resumeTimer();
+        } else {
+            pauseTimer();
+        }
+    };
+
+    const handleContinueSession = async (sessionTopic: string, folderId: number | null) => {
+        if (isRunning) {
+            Alert.alert(
+                'Start New Session?',
+                `"${currentTopic}" is currently running. Save it and start "${sessionTopic}"?`,
+                [
+                    { text: 'Cancel', style: 'cancel' },
+                    {
+                        text: 'Start',
+                        style: 'default',
+                        onPress: async () => {
+                            // Force update params to trigger the useEffect that switches mode
+                            router.setParams({ mode: 'focus', t: Date.now().toString() });
+                            setTopic(sessionTopic);
+                            await startTimer(sessionTopic, folderId ?? undefined);
+                        },
+                    },
+                ]
+            );
+            return;
+        }
+        // Force update params to trigger the useEffect that switches mode
+        router.setParams({ mode: 'focus', t: Date.now().toString() });
         setTopic(sessionTopic);
-        await startTimer(sessionTopic);
-        setViewMode('focus');
+        await startTimer(sessionTopic, folderId ?? undefined);
     };
 
     return (
-        <TouchableWithoutFeedback onPress={Keyboard.dismiss}>
-            <KeyboardAvoidingView
-                behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-                style={[styles.container, { backgroundColor: colors.background }]}
-            >
-                {/* Header */}
-                <View style={styles.header}>
-                    <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
-                    <ThemeToggle />
-                </View>
+        <KeyboardAvoidingView
+            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+            style={[
+                styles.container,
+                {
+                    backgroundColor: colors.background,
+                    paddingTop: insets.top,
+                }
+            ]}
+        >
+            {/* Header */}
+            <View style={styles.header}>
+                <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
+                <ThemeToggle />
+            </View>
 
-                {/* Segmented Control */}
-                <View style={styles.segmentWrapper}>
-                    <SegmentedControl value={viewMode} onChange={setViewMode} />
-                </View>
+            {/* Segmented Control */}
+            <View style={styles.segmentWrapper}>
+                <SegmentedControl value={viewMode} onChange={setViewMode} />
+            </View>
 
-                {/* Content */}
-                <View style={styles.content}>
-                    {viewMode === 'focus' ? (
-                        <View style={styles.timerContainer}>
-                            <CircularTimer
-                                elapsedSeconds={elapsedSeconds}
-                                isRunning={isRunning}
-                            />
-                        </View>
-                    ) : (
-                        <SessionList onStartSession={handleContinueSession} />
-                    )}
-                </View>
+            {/* Content */}
+            <View style={styles.content}>
+                {viewMode === 'focus' ? (
+                    <View style={styles.timerContainer}>
+                        <CircularTimer
+                            elapsedSeconds={elapsedSeconds}
+                            isRunning={isRunning}
+                        />
+                    </View>
+                ) : (
+                    <SessionList onStartSession={handleContinueSession} />
+                )}
+            </View>
 
-                {/* Input Section */}
-                <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
+            {/* Input Section */}
+            <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
+                {!isRunning ? (
                     <View style={styles.inputRow}>
                         <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
                             <TextInput
@@ -253,20 +329,55 @@ export default function TimerScreen() {
                                 placeholderTextColor={colors.mutedForeground}
                                 value={topic}
                                 onChangeText={setTopic}
-                                editable={!isRunning}
                                 style={[styles.input, { color: colors.foreground }]}
                             />
                         </View>
-                        <PlayButton
-                            isRunning={isRunning}
-                            onPress={handlePlayPress}
-                            disabled={!topic.trim() && !isRunning}
+                        <Pressable
+                            onPress={() => setColorPickerVisible(true)}
+                            style={{
+                                width: 44,
+                                height: 52,
+                                alignItems: 'center',
+                                justifyContent: 'center',
+                                backgroundColor: colors.card,
+                                borderRadius: 16,
+                            }}
+                        >
+                            <Palette size={20} color={topicColor || colors.mutedForeground} />
+                        </Pressable>
+                        <TimerControlButton
+                            onPress={handleStart}
+                            disabled={!topic.trim()}
+                            color={colors.primary}
+                            icon={<Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />}
                         />
                     </View>
-                    {isRunning && (
+                ) : (
+                    <View style={styles.controlsColumn}>
+                        {/* Controls */}
+                        <View style={styles.controlsRow}>
+                            <TimerControlButton
+                                onPress={handleTogglePause}
+                                color={isPaused ? colors.primary : '#F59E0B'} // Resume = Primary, Pause = Orange
+                                icon={
+                                    isPaused ? (
+                                        <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
+                                    ) : (
+                                        <Pause size={24} color="#fff" fill="#fff" />
+                                    )
+                                }
+                            />
+                            <TimerControlButton
+                                onPress={handleStop}
+                                color={colors.destructive}
+                                icon={<Square size={22} color="#fff" fill="#fff" />}
+                            />
+                        </View>
+
+                        {/* Info */}
                         <View style={styles.focusingContainer}>
                             <Text variant="muted" style={styles.focusingText}>
-                                Focusing on: <Text style={{ color: colors.primary }}>{topic}</Text>
+                                Currently {isPaused ? 'paused' : 'focusing'} on: <Text style={{ color: colors.primary }}>{topic}</Text>
                             </Text>
                             {currentFolderName && (
                                 <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
@@ -277,13 +388,23 @@ export default function TimerScreen() {
                                 </View>
                             )}
                         </View>
-                    )}
-                </View>
-            </KeyboardAvoidingView>
-        </TouchableWithoutFeedback>
+                    </View>
+                )}
+            </View>
+            <TopicColorPicker
+                visible={colorPickerVisible}
+                onClose={() => setColorPickerVisible(false)}
+                onSelect={(color) => {
+                    setTopicColor(color); // Local feedback
+                    if (topic.trim()) {
+                        updateTopicColor(topic.trim(), color);
+                    }
+                }}
+                selectedColor={topicColor}
+            />
+        </KeyboardAvoidingView>
     );
 }
-
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -362,6 +483,7 @@ const styles = StyleSheet.create({
     input: {
         flex: 1,
         fontSize: 16,
+        fontFamily: 'Poppins_400Regular',
     },
     playButton: {
         width: 56,
@@ -394,5 +516,16 @@ const styles = StyleSheet.create({
     folderBadgeText: {
         fontSize: 12,
         fontWeight: '600',
+    },
+    controlsColumn: {
+        alignItems: 'center',
+        width: '100%',
+    },
+    controlsRow: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        justifyContent: 'center',
+        gap: 32,
+        marginBottom: 8,
     },
 });

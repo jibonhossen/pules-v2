@@ -1,21 +1,23 @@
+import { useSwipeContext } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
-import { TopicItem } from './TopicItem';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { formatDuration } from '@/lib/utils';
 import type { Folder } from '@/lib/database';
-import { ChevronDown, ChevronRight, BarChart3, Trash2, Edit3, Plus } from 'lucide-react-native';
-import * as React from 'react';
+import { formatDuration } from '@/lib/utils';
 import * as Haptics from 'expo-haptics';
-import { Alert, Pressable, View, StyleSheet } from 'react-native';
+import { BarChart3, ChevronDown, ChevronRight, Edit3, Plus, Trash2 } from 'lucide-react-native';
+import * as React from 'react';
+import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import { Gesture, GestureDetector } from 'react-native-gesture-handler';
 import Animated, {
     interpolate,
     runOnJS,
     useAnimatedStyle,
     useSharedValue,
+    withSpring,
     withTiming,
 } from 'react-native-reanimated';
+import { TopicItem } from './TopicItem';
 
 const ACTION_WIDTH = 140;
 
@@ -24,6 +26,7 @@ interface TopicData {
     totalTime: number;
     sessionCount: number;
     lastSession: string;
+    color?: string | null;
 }
 
 interface FolderCardProps {
@@ -37,6 +40,7 @@ interface FolderCardProps {
     onStartTopic: (topic: string, folderId: number) => void;
     onTopicAnalytics: (topic: string) => void;
     onDeleteTopic: (topic: string) => void;
+    onRenameTopic: (topic: string) => void;
 }
 
 export function FolderCard({
@@ -50,6 +54,7 @@ export function FolderCard({
     onStartTopic,
     onTopicAnalytics,
     onDeleteTopic,
+    onRenameTopic,
 }: FolderCardProps) {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
@@ -58,12 +63,28 @@ export function FolderCard({
     const translateX = useSharedValue(0);
     const isOpen = useSharedValue(false);
 
+    const { registerOpenItem, closeCurrent } = useSwipeContext() || {};
+
+    const handleClose = () => {
+        translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
+        isOpen.value = false;
+    };
+
+    const handleRegisterOpen = () => {
+        if (registerOpenItem) {
+            registerOpenItem(folder.id.toString(), handleClose);
+        }
+    };
+
     const panGesture = Gesture.Pan()
         .activeOffsetX([-10, 10])
         .onUpdate((event) => {
             if (isOpen.value) {
-                translateX.value = Math.max(-ACTION_WIDTH, Math.min(0, -ACTION_WIDTH + event.translationX));
+                // Allow dragging back to 0
+                const target = -ACTION_WIDTH + event.translationX;
+                translateX.value = Math.max(-ACTION_WIDTH, Math.min(0, target));
             } else {
+                // Only allow swipe left (negative)
                 translateX.value = Math.max(-ACTION_WIDTH, Math.min(0, event.translationX));
             }
         })
@@ -72,8 +93,9 @@ export function FolderCard({
                 translateX.value = withTiming(-ACTION_WIDTH, { duration: 200 });
                 isOpen.value = true;
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
+                runOnJS(handleRegisterOpen)();
             } else {
-                translateX.value = withTiming(0, { duration: 200 });
+                translateX.value = withSpring(0, { damping: 20, stiffness: 90 });
                 isOpen.value = false;
             }
         });
@@ -81,8 +103,7 @@ export function FolderCard({
     const tapGesture = Gesture.Tap()
         .onEnd(() => {
             if (isOpen.value) {
-                translateX.value = withTiming(0, { duration: 200 });
-                isOpen.value = false;
+                runOnJS(handleClose)();
             } else {
                 runOnJS(Haptics.impactAsync)(Haptics.ImpactFeedbackStyle.Light);
                 runOnJS(setExpanded)(!expanded);
@@ -97,11 +118,18 @@ export function FolderCard({
 
     const actionsStyle = useAnimatedStyle(() => ({
         opacity: interpolate(translateX.value, [-ACTION_WIDTH, 0], [1, 0]),
+        // Slide the actions in from the right as we swipe left
+        transform: [{
+            translateX: interpolate(
+                translateX.value,
+                [-ACTION_WIDTH, 0],
+                [0, ACTION_WIDTH]
+            )
+        }]
     }));
 
     const handleDelete = () => {
-        translateX.value = withTiming(0, { duration: 200 });
-        isOpen.value = false;
+        handleClose();
         Alert.alert(
             'Delete Folder',
             `Delete "${folder.name}"? Topics inside will be unassigned.`,
@@ -117,8 +145,7 @@ export function FolderCard({
     };
 
     const handleEdit = () => {
-        translateX.value = withTiming(0, { duration: 200 });
-        isOpen.value = false;
+        handleClose();
         onEdit(folder);
     };
 
@@ -201,9 +228,11 @@ export function FolderCard({
                                 totalTime={topic.totalTime}
                                 sessionCount={topic.sessionCount}
                                 lastSession={topic.lastSession}
+                                color={topic.color}
                                 onStart={() => onStartTopic(topic.topic, folder.id)}
                                 onAnalytics={onTopicAnalytics}
                                 onDelete={onDeleteTopic}
+                                onRename={onRenameTopic}
                             />
                         ))
                     )}
