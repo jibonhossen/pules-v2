@@ -41,6 +41,10 @@ export default function SignInPage() {
     const [isGoogleLoading, setIsGoogleLoading] = React.useState(false);
     const [error, setError] = React.useState('');
 
+    // 2FA State
+    const [is2FA, setIs2FA] = React.useState(false);
+    const [code, setCode] = React.useState('');
+
     // Email/Password sign in
     const onSignInPress = React.useCallback(async () => {
         if (!isLoaded) return;
@@ -57,6 +61,12 @@ export default function SignInPage() {
             if (signInAttempt.status === 'complete') {
                 await setActive({ session: signInAttempt.createdSessionId });
                 router.replace('/(tabs)');
+            } else if (signInAttempt.status === 'needs_second_factor') {
+                // Handle 2FA
+                await signInAttempt.prepareSecondFactor({
+                    strategy: 'email_code',
+                });
+                setIs2FA(true);
             } else {
                 console.error(JSON.stringify(signInAttempt, null, 2));
                 setError('Sign in incomplete. Please try again.');
@@ -69,6 +79,35 @@ export default function SignInPage() {
             setIsLoading(false);
         }
     }, [isLoaded, signIn, setActive, router, emailAddress, password]);
+
+    // Verify 2FA Code
+    const onVerifyPress = React.useCallback(async () => {
+        if (!isLoaded) return;
+
+        setIsLoading(true);
+        setError('');
+
+        try {
+            const signInAttempt = await signIn.attemptSecondFactor({
+                strategy: 'email_code',
+                code,
+            });
+
+            if (signInAttempt.status === 'complete') {
+                await setActive({ session: signInAttempt.createdSessionId });
+                router.replace('/(tabs)');
+            } else {
+                console.error(JSON.stringify(signInAttempt, null, 2));
+                setError('Verification failed. Please try again.');
+            }
+        } catch (err: any) {
+            console.error(JSON.stringify(err, null, 2));
+            const errorMessage = err?.errors?.[0]?.message || 'Invalid code';
+            setError(errorMessage);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [isLoaded, signIn, setActive, router, code]);
 
     // Google OAuth sign in
     const onGoogleSignIn = React.useCallback(async () => {
@@ -168,100 +207,154 @@ export default function SignInPage() {
 
                     {/* Form */}
                     <View style={styles.formContainer}>
-                        {/* Email Input */}
-                        <View style={styles.inputWrapper}>
-                            <View style={styles.inputIconContainer}>
-                                <Mail size={20} color={colors.mutedForeground} />
-                            </View>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Email address"
-                                placeholderTextColor={colors.mutedForeground}
-                                value={emailAddress}
-                                onChangeText={setEmailAddress}
-                                keyboardType="email-address"
-                                autoCapitalize="none"
-                                autoComplete="email"
-                            />
-                        </View>
+                        {is2FA ? (
+                            <>
+                                <View style={styles.inputWrapper}>
+                                    <View style={styles.inputIconContainer}>
+                                        <Lock size={20} color={colors.mutedForeground} />
+                                    </View>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Enter verification code"
+                                        placeholderTextColor={colors.mutedForeground}
+                                        value={code}
+                                        onChangeText={setCode}
+                                        keyboardType="number-pad"
+                                        autoCapitalize="none"
+                                    />
+                                </View>
 
-                        {/* Password Input */}
-                        <View style={styles.inputWrapper}>
-                            <View style={styles.inputIconContainer}>
-                                <Lock size={20} color={colors.mutedForeground} />
-                            </View>
-                            <TextInput
-                                style={styles.input}
-                                placeholder="Password"
-                                placeholderTextColor={colors.mutedForeground}
-                                value={password}
-                                onChangeText={setPassword}
-                                secureTextEntry={!showPassword}
-                                autoCapitalize="none"
-                            />
-                            <Pressable
-                                style={styles.eyeButton}
-                                onPress={() => setShowPassword(!showPassword)}
-                            >
-                                {showPassword ? (
-                                    <EyeOff size={20} color={colors.mutedForeground} />
-                                ) : (
-                                    <Eye size={20} color={colors.mutedForeground} />
-                                )}
-                            </Pressable>
-                        </View>
+                                <Pressable
+                                    onPress={onVerifyPress}
+                                    style={({ pressed }) => [
+                                        styles.signInButton,
+                                        pressed && styles.buttonPressed,
+                                        (isLoading || !code) && styles.buttonDisabled,
+                                    ]}
+                                    disabled={isLoading || !code}
+                                >
+                                    <LinearGradient
+                                        colors={[colors.primary, colors.secondary]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={styles.buttonGradient}
+                                    >
+                                        {isLoading ? (
+                                            <ActivityIndicator color={colors.primaryForeground} />
+                                        ) : (
+                                            <Text style={styles.signInButtonText}>Verify Code</Text>
+                                        )}
+                                    </LinearGradient>
+                                </Pressable>
 
-                        {/* Sign In Button */}
-                        <Pressable
-                            style={({ pressed }) => [
-                                styles.signInButton,
-                                (!emailAddress || !password || isLoading) && styles.buttonDisabled,
-                                pressed && styles.buttonPressed,
-                            ]}
-                            onPress={onSignInPress}
-                            disabled={!emailAddress || !password || isLoading}
-                        >
-                            <LinearGradient
-                                colors={[colors.primary, colors.secondary]}
-                                style={styles.buttonGradient}
-                                start={{ x: 0, y: 0 }}
-                                end={{ x: 1, y: 0 }}
-                            >
-                                {isLoading ? (
-                                    <ActivityIndicator color={colors.primaryForeground} />
-                                ) : (
-                                    <Text style={styles.signInButtonText}>Sign In</Text>
-                                )}
-                            </LinearGradient>
-                        </Pressable>
+                                <Pressable
+                                    onPress={() => setIs2FA(false)}
+                                    style={{ marginTop: 16, alignSelf: 'center' }}
+                                >
+                                    <Text style={{ color: colors.primary, fontFamily: 'Poppins_500Medium' }}>
+                                        Back to Sign In
+                                    </Text>
+                                </Pressable>
+                            </>
+                        ) : (
+                            <>
+                                {/* Email Input */}
+                                <View style={styles.inputWrapper}>
+                                    <View style={styles.inputIconContainer}>
+                                        <Mail size={20} color={colors.mutedForeground} />
+                                    </View>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Email address"
+                                        placeholderTextColor={colors.mutedForeground}
+                                        value={emailAddress}
+                                        onChangeText={setEmailAddress}
+                                        keyboardType="email-address"
+                                        autoCapitalize="none"
+                                        autoComplete="email"
+                                    />
+                                </View>
 
-                        {/* Divider */}
-                        <View style={styles.dividerContainer}>
-                            <View style={styles.divider} />
-                            <Text style={styles.dividerText}>or</Text>
-                            <View style={styles.divider} />
-                        </View>
+                                {/* Password Input */}
+                                <View style={styles.inputWrapper}>
+                                    <View style={styles.inputIconContainer}>
+                                        <Lock size={20} color={colors.mutedForeground} />
+                                    </View>
+                                    <TextInput
+                                        style={styles.input}
+                                        placeholder="Password"
+                                        placeholderTextColor={colors.mutedForeground}
+                                        value={password}
+                                        onChangeText={setPassword}
+                                        secureTextEntry={!showPassword}
+                                        autoCapitalize="none"
+                                    />
+                                    <Pressable
+                                        style={styles.eyeButton}
+                                        onPress={() => setShowPassword(!showPassword)}
+                                    >
+                                        {showPassword ? (
+                                            <EyeOff size={20} color={colors.mutedForeground} />
+                                        ) : (
+                                            <Eye size={20} color={colors.mutedForeground} />
+                                        )}
+                                    </Pressable>
+                                </View>
 
-                        {/* Google Button */}
-                        <Pressable
-                            style={({ pressed }) => [
-                                styles.googleButton,
-                                pressed && styles.buttonPressed,
-                                isGoogleLoading && styles.buttonDisabled,
-                            ]}
-                            onPress={onGoogleSignIn}
-                            disabled={isGoogleLoading}
-                        >
-                            {isGoogleLoading ? (
-                                <ActivityIndicator color={colors.foreground} />
-                            ) : (
-                                <>
-                                    <GoogleIcon />
-                                    <Text style={styles.googleButtonText}>Continue with Google</Text>
-                                </>
-                            )}
-                        </Pressable>
+                                {/* Sign In Button */}
+                                <Pressable
+                                    onPress={onSignInPress}
+                                    style={({ pressed }) => [
+                                        styles.signInButton,
+                                        pressed && styles.buttonPressed,
+                                        (isLoading || !emailAddress || !password) && styles.buttonDisabled,
+                                    ]}
+                                    disabled={isLoading || !emailAddress || !password}
+                                >
+                                    <LinearGradient
+                                        colors={[colors.primary, colors.secondary]}
+                                        start={{ x: 0, y: 0 }}
+                                        end={{ x: 1, y: 1 }}
+                                        style={styles.buttonGradient}
+                                    >
+                                        {isLoading ? (
+                                            <ActivityIndicator color={colors.primaryForeground} />
+                                        ) : (
+                                            <Text style={styles.signInButtonText}>Sign In</Text>
+                                        )}
+                                    </LinearGradient>
+                                </Pressable>
+                            </>
+                        )}
                     </View>
+
+                    {/* Divider */}
+                    <View style={styles.dividerContainer}>
+                        <View style={styles.divider} />
+                        <Text style={styles.dividerText}>or</Text>
+                        <View style={styles.divider} />
+                    </View>
+
+                    {/* Google Button */}
+                    <Pressable
+                        style={({ pressed }) => [
+                            styles.googleButton,
+                            pressed && styles.buttonPressed,
+                            isGoogleLoading && styles.buttonDisabled,
+                        ]}
+                        onPress={onGoogleSignIn}
+                        disabled={isGoogleLoading}
+                    >
+                        {isGoogleLoading ? (
+                            <ActivityIndicator color={colors.foreground} />
+                        ) : (
+                            <>
+                                <GoogleIcon />
+                                <Text style={styles.googleButtonText}>Continue with Google</Text>
+                            </>
+                        )}
+                    </Pressable>
+
 
                     {/* Footer */}
                     <View style={styles.footer}>

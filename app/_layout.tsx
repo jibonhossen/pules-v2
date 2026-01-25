@@ -2,7 +2,9 @@
 import { NAV_THEME, PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useDatabase } from '@/lib/database';
-import { ClerkLoaded, ClerkProvider, useAuth } from '@clerk/clerk-expo';
+import { useSessionStore } from '@/store/sessions';
+import { useSyncStore } from '@/store/sync';
+import { ClerkLoaded, ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import { tokenCache } from '@clerk/clerk-expo/token-cache';
 import {
   Poppins_400Regular,
@@ -11,6 +13,7 @@ import {
   Poppins_700Bold,
   useFonts,
 } from '@expo-google-fonts/poppins';
+import NetInfo from '@react-native-community/netinfo';
 import { ThemeProvider } from '@react-navigation/native';
 import { Stack, useRouter, useSegments } from 'expo-router';
 import { StatusBar } from 'expo-status-bar';
@@ -37,25 +40,54 @@ function LoadingScreen() {
 }
 
 // Component to handle auth-based routing
-// Authentication is OPTIONAL - app works offline without requiring sign-in
+// User must sign in on first launch for cloud sync
 function InitialLayout() {
   const { isSignedIn, isLoaded } = useAuth();
+  const { user } = useUser();
   const segments = useSegments();
   const router = useRouter();
+  const setUserId = useSessionStore((state) => state.setUserId);
+  const sync = useSyncStore((state) => state.sync);
+
+  // Sync user ID to session store for cloud sync
+  React.useEffect(() => {
+    if (user?.id) {
+      setUserId(user.id);
+    } else {
+      setUserId(null);
+    }
+  }, [user?.id, setUserId]);
+
+  // Monitor network state and auto-sync when online
+  React.useEffect(() => {
+    if (!user?.id) return;
+
+    // Sync on mount
+    sync(user.id);
+
+    // Sync when network state changes to connected
+    const unsubscribe = NetInfo.addEventListener(state => {
+      if (state.isConnected && state.isInternetReachable) {
+        console.log('[Sync] Network connected, triggering sync...');
+        sync(user.id);
+      }
+    });
+
+    return () => unsubscribe();
+  }, [user?.id, sync]);
 
   React.useEffect(() => {
     if (!isLoaded) return;
 
     const inAuthGroup = segments[0] === '(auth)';
 
-    // Only redirect if user is signed in and on auth screen
-    // We do NOT force users to sign in - app works without authentication
     if (isSignedIn && inAuthGroup) {
       // User is signed in but on auth screen, redirect to home
       router.replace('/(tabs)');
+    } else if (!isSignedIn && !inAuthGroup) {
+      // User is not signed in and not on auth screen, redirect to sign-in
+      router.replace('/(auth)/sign-in');
     }
-    // Removed: redirect to sign-in when not signed in
-    // This allows the app to work offline without requiring authentication
   }, [isSignedIn, isLoaded, segments]);
 
   return (

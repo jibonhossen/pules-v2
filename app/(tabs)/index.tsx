@@ -1,5 +1,6 @@
 import { CircularTimer } from '@/components/CircularTimer';
 import { SessionList } from '@/components/SessionList';
+import { SyncIndicator } from '@/components/SyncIndicator';
 import { TopicColorPicker } from '@/components/TopicColorPicker';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
@@ -297,7 +298,10 @@ export default function TimerScreen() {
             {/* Header */}
             <View style={styles.header}>
                 <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
-                <ThemeToggle />
+                <View style={styles.headerRight}>
+                    <SyncIndicator color={colors.primary} />
+                    <ThemeToggle />
+                </View>
             </View>
 
             {/* Segmented Control */}
@@ -419,6 +423,11 @@ const styles = StyleSheet.create({
     title: {
         fontSize: 28,
         fontWeight: '700',
+    },
+    headerRight: {
+        flexDirection: 'row',
+        alignItems: 'center',
+        gap: 4,
     },
     themeToggle: {
         borderRadius: 20,

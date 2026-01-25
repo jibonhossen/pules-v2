@@ -7,6 +7,8 @@ export interface Folder {
     color: string;
     icon: string;
     created_at: string;
+    cloud_id?: string | null;
+    updated_at?: string | null;
 }
 
 export interface Session {
@@ -17,12 +19,53 @@ export interface Session {
     start_time: string;
     end_time: string | null;
     duration_seconds: number;
+    cloud_id?: string | null;
+    updated_at?: string | null;
     // Joined fields
     folder_name?: string | null;
     folder_color?: string | null;
     folder_icon?: string | null;
     topic_color?: string | null;
 }
+
+
+
+// ==================== CLOUD ID HELPERS ====================
+
+export async function setFolderCloudId(id: number, cloudId: string): Promise<void> {
+    const database = await getDatabase();
+    await database.runAsync(
+        'UPDATE folders SET cloud_id = ? WHERE id = ?',
+        cloudId, id
+    );
+}
+
+export async function setSessionCloudId(id: number, cloudId: string): Promise<void> {
+    const database = await getDatabase();
+    await database.runAsync(
+        'UPDATE sessions SET cloud_id = ? WHERE id = ?',
+        cloudId, id
+    );
+}
+
+export async function getFolderByCloudId(cloudId: string): Promise<Folder | null> {
+    const database = await getDatabase();
+    return database.getFirstAsync<Folder>(
+        'SELECT * FROM folders WHERE cloud_id = ?',
+        cloudId
+    );
+}
+
+export async function getSessionByCloudId(cloudId: string): Promise<Session | null> {
+    const database = await getDatabase();
+    return database.getFirstAsync<Session>(
+        'SELECT * FROM sessions WHERE cloud_id = ?',
+        cloudId
+    );
+}
+
+// ==================== APP STATE & RECOVERY ====================
+
 
 let dbPromise: Promise<SQLite.SQLiteDatabase> | null = null;
 
@@ -41,7 +84,8 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
           name TEXT NOT NULL,
           color TEXT DEFAULT '#14b8a6',
           icon TEXT DEFAULT 'folder',
-          created_at TEXT NOT NULL
+          created_at TEXT NOT NULL,
+          cloud_id TEXT
         );
       `);
 
@@ -54,7 +98,8 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
           folder_id INTEGER REFERENCES folders(id),
           start_time TEXT NOT NULL,
           end_time TEXT,
-          duration_seconds INTEGER DEFAULT 0
+          duration_seconds INTEGER DEFAULT 0,
+          cloud_id TEXT
         );
 
         -- Create app_state table for persistence
@@ -85,7 +130,26 @@ export async function getDatabase(): Promise<SQLite.SQLiteDatabase> {
             // Column already exists, ignore
         }
 
+        // Add cloud_id to folders and sessions for multi-device sync
+        try {
+            await db.execAsync(`ALTER TABLE folders ADD COLUMN cloud_id TEXT;`);
+        } catch (e) {
+            // Ignore
+        }
+        try {
+            await db.execAsync(`ALTER TABLE sessions ADD COLUMN cloud_id TEXT;`);
+        } catch (e) {
+            // Ignore
+        }
 
+        // Add updated_at to sessions for sync delta
+        try {
+            await db.execAsync(`ALTER TABLE sessions ADD COLUMN updated_at TEXT;`);
+            // Initialize updated_at for existing records
+            await db.execAsync(`UPDATE sessions SET updated_at = start_time WHERE updated_at IS NULL;`);
+        } catch (e) {
+            // Ignore
+        }
 
         return db;
     })();
@@ -114,7 +178,7 @@ export async function createSession(topic: string, tags?: string, folderId?: num
 
     const result = await database.runAsync(
         'INSERT INTO sessions (topic, tags, folder_id, start_time) VALUES (?, ?, ?, ?)',
-        [topic, tags || null, folderId || null, startTime]
+        topic, tags || null, folderId || null, startTime
     );
 
     return result.lastInsertRowId;
@@ -127,7 +191,7 @@ export async function endSession(id: number): Promise<void> {
     // Get start time to calculate duration
     const session = await database.getFirstAsync<Session>(
         'SELECT * FROM sessions WHERE id = ?',
-        [id]
+        id
     );
 
     if (session) {
@@ -137,7 +201,7 @@ export async function endSession(id: number): Promise<void> {
 
         await database.runAsync(
             'UPDATE sessions SET end_time = ?, duration_seconds = ? WHERE id = ?',
-            [endTime, durationSeconds, id]
+            endTime, durationSeconds, id
         );
     }
 }
@@ -166,7 +230,7 @@ export async function getSessionsByDateRange(
          LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
          WHERE start_time >= ? AND start_time <= ? AND duration_seconds > 0
          ORDER BY start_time DESC`,
-        [startDate, endDate]
+        startDate, endDate
     );
 }
 
@@ -189,7 +253,7 @@ export async function getDailyStats(days: number = 30): Promise<Map<string, numb
         `SELECT * FROM sessions 
      WHERE start_time >= ? AND end_time IS NOT NULL
      ORDER BY start_time`,
-        [startDate.toISOString()]
+        startDate.toISOString()
     );
 
     const dailyMap = new Map<string, number>();
@@ -247,7 +311,7 @@ export async function getSessionsByTopic(topic: string): Promise<Session[]> {
          LEFT JOIN topic_configs ON sessions.topic = topic_configs.topic
          WHERE sessions.topic = ? AND duration_seconds > 0
          ORDER BY start_time DESC`,
-        [topic]
+        topic
     );
 }
 
@@ -256,20 +320,20 @@ export async function renameAllSessionsWithTopic(oldTopic: string, newTopic: str
     const database = await getDatabase();
     await database.runAsync(
         'UPDATE sessions SET topic = ? WHERE topic = ?',
-        [newTopic, oldTopic]
+        newTopic, oldTopic
     );
 }
 
 // Delete a session by ID
 export async function deleteSession(id: number): Promise<void> {
     const database = await getDatabase();
-    await database.runAsync('DELETE FROM sessions WHERE id = ?', [id]);
+    await database.runAsync('DELETE FROM sessions WHERE id = ?', id);
 }
 
 // Delete all sessions for a specific topic
 export async function deleteTopic(topic: string): Promise<void> {
     const database = await getDatabase();
-    await database.runAsync('DELETE FROM sessions WHERE topic = ?', [topic]);
+    await database.runAsync('DELETE FROM sessions WHERE topic = ?', topic);
 }
 
 // ==================== FOLDER FUNCTIONS ====================
@@ -281,7 +345,7 @@ export async function createFolder(name: string, color: string = '#14b8a6', icon
 
     const result = await database.runAsync(
         'INSERT INTO folders (name, color, icon, created_at) VALUES (?, ?, ?, ?)',
-        [name, color, icon, createdAt]
+        name, color, icon, createdAt
     );
 
     return result.lastInsertRowId;
@@ -300,7 +364,7 @@ export async function getFolderById(id: number): Promise<Folder | null> {
     const database = await getDatabase();
     return database.getFirstAsync<Folder>(
         'SELECT * FROM folders WHERE id = ?',
-        [id]
+        id
     );
 }
 
@@ -309,15 +373,15 @@ export async function updateFolder(id: number, name: string, color: string, icon
     const database = await getDatabase();
     await database.runAsync(
         'UPDATE folders SET name = ?, color = ?, icon = ? WHERE id = ?',
-        [name, color, icon, id]
+        name, color, icon, id
     );
 }
 
 // Delete folder (also removes folder_id from associated sessions)
 export async function deleteFolder(id: number): Promise<void> {
     const database = await getDatabase();
-    await database.runAsync('UPDATE sessions SET folder_id = NULL WHERE folder_id = ?', [id]);
-    await database.runAsync('DELETE FROM folders WHERE id = ?', [id]);
+    await database.runAsync('UPDATE sessions SET folder_id = NULL WHERE folder_id = ?', id);
+    await database.runAsync('DELETE FROM folders WHERE id = ?', id);
 }
 
 // Create a placeholder session to simple "create" a topic
@@ -326,7 +390,7 @@ export async function createTopicInFolder(topic: string, folderId: number): Prom
     const now = new Date().toISOString();
     await database.runAsync(
         'INSERT INTO sessions (topic, folder_id, start_time, end_time, duration_seconds) VALUES (?, ?, ?, ?, 0)',
-        [topic, folderId, now, now]
+        topic, folderId, now, now
     );
 }
 
@@ -345,7 +409,7 @@ export async function getTopicsByFolder(folderId: number): Promise<{ topic: stri
         WHERE folder_id = ? AND end_time IS NOT NULL
         GROUP BY sessions.topic, topic_configs.color
         ORDER BY lastSession DESC`,
-        [folderId]
+        folderId
     );
 }
 
@@ -370,9 +434,10 @@ export async function getUnfolderedTopics(): Promise<{ topic: string; totalTime:
 // Assign topic to folder
 export async function assignTopicToFolder(topic: string, folderId: number | null): Promise<void> {
     const database = await getDatabase();
+    const now = new Date().toISOString();
     await database.runAsync(
-        'UPDATE sessions SET folder_id = ? WHERE topic = ?',
-        [folderId, topic]
+        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE topic = ?',
+        folderId, now, topic
     );
 }
 
@@ -386,7 +451,7 @@ export async function getFolderStats(folderId: number): Promise<{ totalTime: num
             COUNT(DISTINCT topic) as topicCount
         FROM sessions 
         WHERE folder_id = ? AND end_time IS NOT NULL`,
-        [folderId]
+        folderId
     );
     return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
 }
@@ -401,7 +466,7 @@ export async function getTopicStats(topic: string): Promise<{ totalTime: number;
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
         WHERE topic = ? AND end_time IS NOT NULL`,
-        [topic]
+        topic
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
@@ -417,7 +482,7 @@ export async function getTopicDailyStats(topic: string, days: number = 30): Prom
         `SELECT * FROM sessions 
      WHERE topic = ? AND start_time >= ? AND end_time IS NOT NULL
      ORDER BY start_time`,
-        [topic, startDate.toISOString()]
+        topic, startDate.toISOString()
     );
 
     const dailyMap = new Map<string, number>();
@@ -446,7 +511,7 @@ export async function getTopicDailyStatsForRange(topic: string, startDate: strin
         `SELECT * FROM sessions 
      WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
      ORDER BY start_time`,
-        [topic, startDate, endDate]
+        topic, startDate, endDate
     );
 
     const dailyMap = new Map<string, number>();
@@ -470,7 +535,7 @@ export async function getFolderDailyStatsForRange(folderId: number, startDate: s
         `SELECT * FROM sessions 
      WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
      ORDER BY start_time`,
-        [folderId, startDate, endDate]
+        folderId, startDate, endDate
     );
 
     const dailyMap = new Map<string, number>();
@@ -498,7 +563,7 @@ export async function getFolderDailyStats(folderId: number, days: number = 30): 
         `SELECT * FROM sessions 
      WHERE folder_id = ? AND start_time >= ? AND end_time IS NOT NULL
      ORDER BY start_time`,
-        [folderId, startDate.toISOString()]
+        folderId, startDate.toISOString()
     );
 
     const dailyMap = new Map<string, number>();
@@ -518,9 +583,10 @@ export async function getFolderDailyStats(folderId: number, days: number = 30): 
 // Move topic to folder
 export async function moveTopicToFolder(topic: string, folderId: number): Promise<void> {
     const database = await getDatabase();
+    const now = new Date().toISOString();
     await database.runAsync(
-        'UPDATE sessions SET folder_id = ? WHERE topic = ?',
-        [folderId, topic]
+        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE topic = ?',
+        folderId, now, topic
     );
 }
 
@@ -534,7 +600,7 @@ export async function getTopicStatsForRange(topic: string, startDate: string, en
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
         WHERE topic = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        [topic, startDate, endDate]
+        topic, startDate, endDate
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
@@ -549,7 +615,7 @@ export async function getFolderStatsForRange(folderId: number, startDate: string
             COUNT(DISTINCT topic) as topicCount
         FROM sessions 
         WHERE folder_id = ? AND start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        [folderId, startDate, endDate]
+        folderId, startDate, endDate
     );
     return result || { totalTime: 0, sessionCount: 0, topicCount: 0 };
 }
@@ -564,7 +630,7 @@ export async function getStatsForRange(startDate: string, endDate: string): Prom
             COALESCE(AVG(duration_seconds), 0) as averageTime
         FROM sessions 
         WHERE start_time >= ? AND start_time <= ? AND end_time IS NOT NULL`,
-        [startDate, endDate]
+        startDate, endDate
     );
     return result || { totalTime: 0, sessionCount: 0, averageTime: 0 };
 }
@@ -575,7 +641,7 @@ export async function setAppState(key: string, value: string): Promise<void> {
     const database = await getDatabase();
     await database.runAsync(
         'INSERT OR REPLACE INTO app_state (key, value) VALUES (?, ?)',
-        [key, value]
+        key, value
     );
 }
 
@@ -583,7 +649,7 @@ export async function getAppState(key: string): Promise<string | null> {
     const database = await getDatabase();
     const result = await database.getFirstAsync<{ value: string }>(
         'SELECT value FROM app_state WHERE key = ?',
-        [key]
+        key
     );
     return result?.value || null;
 }
@@ -599,7 +665,7 @@ export async function upsertTopicConfig(topic: string, allowBackground: boolean,
 
     await database.runAsync(
         'INSERT OR REPLACE INTO topic_configs (topic, allow_background, color) VALUES (?, ?, ?)',
-        [topic, allowBackground ? 1 : 0, newColor || null]
+        topic, allowBackground ? 1 : 0, newColor || null
     );
 }
 
@@ -607,7 +673,7 @@ export async function getTopicConfig(topic: string): Promise<{ allowBackground: 
     const database = await getDatabase();
     const result = await database.getFirstAsync<{ allow_background: number; color: string | null }>(
         'SELECT allow_background, color FROM topic_configs WHERE topic = ?',
-        [topic]
+        topic
     );
     return { allowBackground: !!result?.allow_background, color: result?.color || null };
 }
@@ -651,7 +717,7 @@ export async function recoverUnfinishedSession(): Promise<boolean> {
 
             await database.runAsync(
                 'UPDATE sessions SET end_time = ?, duration_seconds = ? WHERE id = ?',
-                [endTimeStr, durationSeconds, unfinishedSession.id]
+                endTimeStr, durationSeconds, unfinishedSession.id
             );
             return true;
         } catch (e) {

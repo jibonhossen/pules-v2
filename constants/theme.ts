@@ -18,6 +18,7 @@ export const PULSE_COLORS = {
     border: '#e4e4e7',
     input: '#e4e4e7',
     destructive: '#ef4444',
+    success: '#22c55e',
   },
   dark: {
     background: '#09090b',   // Zinc-950
@@ -35,6 +36,7 @@ export const PULSE_COLORS = {
     border: '#27272a',
     input: '#27272a',
     destructive: '#dc2626',
+    success: '#22c55e',
   },
 };
 

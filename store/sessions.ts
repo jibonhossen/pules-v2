@@ -13,6 +13,7 @@ import {
     upsertTopicConfig,
     type Session,
 } from '@/lib/database';
+import { triggerAutoSync } from '@/store/sync';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { create } from 'zustand';
 
@@ -30,6 +31,7 @@ interface TimerState {
     currentFolderName: string;
     isBackgroundAllowed: boolean;
     autoPaused: boolean;
+    userId: string | null; // Added for sync
 
     // Session data
     sessions: Session[];
@@ -53,6 +55,7 @@ interface TimerState {
     loadSessions: () => Promise<void>;
     loadStats: () => Promise<void>;
     updateTopicColor: (topic: string, color: string) => Promise<void>;
+    setUserId: (userId: string | null) => void;
 }
 
 export const useSessionStore = create<TimerState>((set, get) => ({
@@ -68,6 +71,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     currentFolderName: '',
     isBackgroundAllowed: false,
     autoPaused: false,
+    userId: null,
     sessions: [],
     todaySessions: [],
     totalFocusTime: 0,
@@ -144,7 +148,7 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     },
 
     stopTimer: async () => {
-        const { currentSessionId } = get();
+        const { currentSessionId, userId } = get();
         if (currentSessionId) {
             await endSession(currentSessionId);
         }
@@ -165,9 +169,13 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             autoPaused: false,
         });
         await deactivateKeepAwake();
+
         // Refresh data
         get().loadSessions();
         get().loadStats();
+
+        // Trigger cloud sync if user is signed in
+        triggerAutoSync(userId);
     },
 
     tick: () => {
@@ -319,6 +327,10 @@ export const useSessionStore = create<TimerState>((set, get) => ({
         await upsertTopicConfig(topic, allowBackground, color);
         // Refresh sessions to update colors
         get().loadSessions();
+    },
+
+    setUserId: (userId: string | null) => {
+        set({ userId });
     },
 }));
 

@@ -1,3 +1,4 @@
+import { SyncStatusCard } from '@/components/SyncStatusCard';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAuth, useUser } from '@clerk/clerk-expo';
@@ -148,59 +149,32 @@ export default function SettingsScreen() {
                 <View style={styles.headerRight} />
             </View>
 
-            {/* User Profile Card - Show different content based on auth state */}
-            {isSignedIn ? (
-                <View style={styles.profileCard}>
-                    <LinearGradient
-                        colors={[colors.primary, colors.secondary]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.avatarGradient}
-                    >
-                        <Text style={styles.avatarText}>
-                            {user?.firstName?.[0]?.toUpperCase() ||
-                                user?.username?.[0]?.toUpperCase() ||
-                                user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ||
-                                'U'}
-                        </Text>
-                    </LinearGradient>
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>
-                            {user?.firstName
-                                ? `${user.firstName} ${user.lastName || ''}`
-                                : user?.username || 'User'}
-                        </Text>
-                        <Text style={styles.profileEmail}>
-                            {user?.emailAddresses?.[0]?.emailAddress || 'No email'}
-                        </Text>
-                    </View>
-                </View>
-            ) : (
-                <Pressable
-                    style={styles.profileCard}
-                    onPress={handleSignIn}
+            {/* User Profile Card */}
+            <View style={styles.profileCard}>
+                <LinearGradient
+                    colors={[colors.primary, colors.secondary]}
+                    start={{ x: 0, y: 0 }}
+                    end={{ x: 1, y: 1 }}
+                    style={styles.avatarGradient}
                 >
-                    <LinearGradient
-                        colors={[colors.primary, colors.secondary]}
-                        start={{ x: 0, y: 0 }}
-                        end={{ x: 1, y: 1 }}
-                        style={styles.avatarGradient}
-                    >
-                        <User size={28} color={colors.primaryForeground} />
-                    </LinearGradient>
-                    <View style={styles.profileInfo}>
-                        <Text style={styles.profileName}>Guest User</Text>
-                        <Text style={styles.profileEmail}>
-                            Sign in to sync your data
-                        </Text>
-                    </View>
-                    <ChevronLeft
-                        size={20}
-                        color={colors.mutedForeground}
-                        style={{ transform: [{ rotate: '180deg' }] }}
-                    />
-                </Pressable>
-            )}
+                    <Text style={styles.avatarText}>
+                        {user?.firstName?.[0]?.toUpperCase() ||
+                            user?.username?.[0]?.toUpperCase() ||
+                            user?.emailAddresses?.[0]?.emailAddress?.[0]?.toUpperCase() ||
+                            'U'}
+                    </Text>
+                </LinearGradient>
+                <View style={styles.profileInfo}>
+                    <Text style={styles.profileName}>
+                        {user?.firstName
+                            ? `${user.firstName} ${user.lastName || ''}`
+                            : user?.username || 'User'}
+                    </Text>
+                    <Text style={styles.profileEmail}>
+                        {user?.emailAddresses?.[0]?.emailAddress || 'No email'}
+                    </Text>
+                </View>
+            </View>
 
             {/* Account Section - Only show if signed in */}
             {isSignedIn && (
@@ -226,6 +200,12 @@ export default function SettingsScreen() {
                     </View>
                 </View>
             )}
+
+            {/* Cloud Sync Section */}
+            <View style={styles.section}>
+                <Text style={styles.sectionTitle}>Cloud Sync</Text>
+                <SyncStatusCard />
+            </View>
 
             {/* Preferences Section */}
             <View style={styles.section}>

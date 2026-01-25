@@ -18,7 +18,9 @@ import {
     upsertTopicConfig,
     type Folder,
 } from '@/lib/database';
+import { syncAll } from '@/lib/sync-engine';
 import { useSessionStore } from '@/store/sessions';
+import { useAuth } from '@clerk/clerk-expo';
 import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { FolderOpen, Plus } from 'lucide-react-native';
@@ -51,6 +53,7 @@ export default function FoldersScreen() {
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const router = useRouter();
     const { startTimer, isRunning, currentTopic } = useSessionStore();
+    const { userId } = useAuth();
 
     const [folders, setFolders] = React.useState<FolderWithData[]>([]);
     const [unfolderedTopics, setUnfolderedTopics] = React.useState<TopicData[]>([]);
@@ -67,6 +70,7 @@ export default function FoldersScreen() {
     const loadData = React.useCallback(async () => {
         try {
             const allFolders = await getFolders();
+            console.log('[UI] getFolders returned:', allFolders.length, 'folders'); // DEBUG
             if (!allFolders) return;
             const foldersWithData: FolderWithData[] = await Promise.all(
                 allFolders.map(async (folder) => {
@@ -94,9 +98,21 @@ export default function FoldersScreen() {
 
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
-        await loadData();
-        setRefreshing(false);
-    }, [loadData]);
+        try {
+            if (userId) {
+                const result = await syncAll(userId);
+                if (result.error) {
+                    Alert.alert('Sync Warning', 'Part of the sync failed: ' + result.error);
+                }
+            }
+            await loadData();
+        } catch (e) {
+            console.error('Refresh failed', e);
+            Alert.alert('Error', 'Failed to refresh data');
+        } finally {
+            setRefreshing(false);
+        }
+    }, [loadData, userId]);
 
     const handleCreateFolder = () => {
         Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
