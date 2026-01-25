@@ -6,6 +6,7 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useAppState } from '@/hooks/useAppState';
+import { useLiveStats } from '@/hooks/useLiveDatabase';
 import { useSessionStore } from '@/store/sessions';
 import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
@@ -174,6 +175,8 @@ export default function TimerScreen() {
     const [colorPickerVisible, setColorPickerVisible] = React.useState(false);
     const [topicColor, setTopicColor] = React.useState<string | null>(null);
 
+    const { totalFocusTime } = useLiveStats();
+    // Use store only for local timer state
     const {
         isRunning,
         isPaused,
@@ -187,7 +190,7 @@ export default function TimerScreen() {
         resumeTimer,
         tick,
         loadSessions,
-        loadStats,
+        // loadStats, // Removed manual loading
         updateTopicColor,
         onAppBackground,
         onAppForeground,
@@ -210,8 +213,8 @@ export default function TimerScreen() {
     // Load data when user becomes available
     React.useEffect(() => {
         if (userId) {
-            loadSessions();
-            loadStats();
+            loadSessions(); // Still needed for recovering timer state
+            // loadStats(); // Handled by PowerSync reactive path
         }
     }, [userId]);
 

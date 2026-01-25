@@ -5,14 +5,12 @@ import {
     getAppState,
     getCurrentStreak,
     getFolderById,
-    getTodaySessions,
     getTopicConfig,
-    getTotalFocusTime,
     recoverUnfinishedSession,
     setAppState,
     setCurrentUserId,
     upsertTopicConfig,
-    type Session,
+    type Session
 } from '@/lib/database';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { create } from 'zustand';
@@ -274,29 +272,31 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             }
         }
 
-        const [sessions, todaySessions] = await Promise.all([
+        // Just load all sessions for internal logic if needed, but UI uses reactive hooks
+        const [sessions] = await Promise.all([
             getAllSessions(),
-            getTodaySessions(),
         ]);
-        set({ sessions, todaySessions });
+        set({ sessions });
 
         // Also load stats
-        get().loadStats();
+        // get().loadStats(); // Removed manual call
     },
 
     loadStats: async () => {
+        // Deprecated: statistics are now loaded reactively via useLiveStats
+        /*
         const { userId } = get();
-        // Skip if user is not authenticated yet
-        if (!userId) {
-            console.log('[Timer] Skipping loadStats - user not authenticated');
-            return;
-        }
+        if (!userId) return;
 
         const [totalFocusTime, currentStreak] = await Promise.all([
             getTotalFocusTime(),
             getCurrentStreak(),
         ]);
         set({ totalFocusTime, currentStreak });
+        */
+        // Keep only streak for now as it's not fully reactive yet
+        const currentStreak = await getCurrentStreak();
+        set({ currentStreak });
     },
 
     updateTopicColor: async (topic: string, color: string) => {
