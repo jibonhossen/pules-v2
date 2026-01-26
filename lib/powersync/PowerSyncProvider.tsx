@@ -18,7 +18,6 @@ import { useSessionStore } from '@/store/sessions';
 export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
     const { getToken } = useAuth();
     const userId = useSessionStore((state) => state.userId);
-    const [isReady, setIsReady] = useState(false);
     const [jwtTemplateFailed, setJwtTemplateFailed] = useState(false);
 
     // Create a stable getToken callback for the connector
@@ -83,11 +82,9 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
                     await db.disconnect();
                     console.log('[PowerSync] Disconnected - no user');
                 }
-
-                setIsReady(true);
             } catch (error) {
                 console.error('[PowerSync] Setup failed:', error);
-                setIsReady(true); // Still render children for local-only mode
+                // Still continue - PowerSync works in local-only mode
             }
         };
 

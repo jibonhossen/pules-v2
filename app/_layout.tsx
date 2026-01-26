@@ -6,6 +6,7 @@ import { setCurrentUserId } from '@/lib/database';
 import { PowerSyncProvider } from '@/lib/powersync/PowerSyncProvider';
 import { useSessionStore } from '@/store/sessions';
 import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
+import { resourceCache } from '@clerk/clerk-expo/resource-cache';
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -132,7 +133,11 @@ export default function RootLayout() {
   }
 
   return (
-    <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
+    <ClerkProvider
+      publishableKey={CLERK_PUBLISHABLE_KEY}
+      tokenCache={tokenCache}
+      __experimental_resourceCache={resourceCache}
+    >
       <PowerSyncProvider>
         <GestureHandlerRootView style={styles.root}>
           <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
