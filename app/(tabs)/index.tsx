@@ -215,8 +215,12 @@ export default function FoldersScreen() {
 
     const handleSaveNewTopic = async (topicName: string, allowBackground: boolean, color: string) => {
         if (selectedFolderForTopic && topicName.trim()) {
-            await createTopicInFolder(topicName.trim(), selectedFolderForTopic.id);
-            await upsertTopicConfig(topicName.trim(), allowBackground, color); // Updated args
+            // createTopicInFolder now handles color and folder assignment via upsertTopicConfig
+            await createTopicInFolder(topicName.trim(), selectedFolderForTopic.id, color);
+            // Update allow_background setting if enabled
+            if (allowBackground) {
+                await upsertTopicConfig(topicName.trim(), true, color, selectedFolderForTopic.id);
+            }
             setAddTopicModalVisible(false);
             loadData(); // Reload to show the new topic
         }

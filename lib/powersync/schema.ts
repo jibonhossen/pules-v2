@@ -42,6 +42,7 @@ const sessions = new Table(
 const topic_configs = new Table({
     user_id: column.text,
     topic: column.text,
+    folder_id: column.text, // Folder association
     allow_background: column.integer, // Boolean as 0/1
     color: column.text,
     created_at: column.text,

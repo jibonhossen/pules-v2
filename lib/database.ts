@@ -2,6 +2,7 @@
  * Database Layer - PowerSync Implementation
  * All CRUD operations using PowerSync's local SQLite database
  */
+import * as SecureStore from 'expo-secure-store';
 import { db } from './powersync/database';
 
 // ==================== TYPES ====================
@@ -40,6 +41,7 @@ export interface TopicConfig {
     id: string;
     user_id: string;
     topic: string;
+    folder_id: string | null;
     allow_background: number;
     color: string | null;
     created_at: string;
@@ -249,9 +251,15 @@ export async function deleteSession(id: string): Promise<void> {
 export async function deleteTopic(topic: string): Promise<void> {
     const userId = getCurrentUserId();
     const now = new Date().toISOString();
+    // Soft-delete all sessions with this topic
     await db.execute(
         'UPDATE sessions SET is_deleted = 1, updated_at = ? WHERE user_id = ? AND topic = ?',
         [now, userId, topic]
+    );
+    // Delete topic config (color, folder association)
+    await db.execute(
+        'DELETE FROM topic_configs WHERE user_id = ? AND topic = ?',
+        [userId, topic]
     );
 }
 
@@ -318,31 +326,24 @@ export async function deleteFolder(id: string): Promise<void> {
     );
 }
 
-export async function createTopicInFolder(topic: string, folderId: string): Promise<void> {
-    const id = uuid();
-    const now = new Date().toISOString();
-    const userId = getCurrentUserId();
-
-    await db.execute(
-        `INSERT INTO sessions (id, user_id, topic, folder_id, start_time, end_time, duration_seconds, created_at, updated_at, is_deleted)
-         VALUES (?, ?, ?, ?, ?, ?, 0, ?, ?, 0)`,
-        [id, userId, topic, folderId, now, now, now, now]
-    );
+export async function createTopicInFolder(topic: string, folderId: string, color?: string): Promise<void> {
+    // Create topic config with folder association (no dummy session)
+    await upsertTopicConfig(topic, false, color, folderId);
 }
 
 export async function getTopicsByFolder(folderId: string, userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
     const id = userId || getCurrentUserId();
     return db.getAll(
         `SELECT 
-            s.topic,
+            tc.topic,
             COALESCE(SUM(s.duration_seconds), 0) as totalTime,
             COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
             MAX(s.start_time) as lastSession,
             tc.color
-        FROM sessions s
-        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
-        WHERE s.folder_id = ? AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
-        GROUP BY s.topic, tc.color
+        FROM topic_configs tc
+        LEFT JOIN sessions s ON s.topic = tc.topic AND s.user_id = tc.user_id AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        WHERE tc.folder_id = ? AND tc.user_id = ?
+        GROUP BY tc.topic, tc.color
         ORDER BY lastSession DESC`,
         [folderId, id]
     );
@@ -352,16 +353,16 @@ export async function getAllFolderTopics(userId?: string): Promise<{ folder_id: 
     const id = userId || getCurrentUserId();
     return db.getAll(
         `SELECT 
-            s.folder_id,
-            s.topic,
+            tc.folder_id,
+            tc.topic,
             COALESCE(SUM(s.duration_seconds), 0) as totalTime,
             COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
             MAX(s.start_time) as lastSession,
             tc.color
-        FROM sessions s
-        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
-        WHERE s.folder_id IS NOT NULL AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
-        GROUP BY s.folder_id, s.topic, tc.color
+        FROM topic_configs tc
+        LEFT JOIN sessions s ON s.topic = tc.topic AND s.user_id = tc.user_id AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        WHERE tc.folder_id IS NOT NULL AND tc.user_id = ?
+        GROUP BY tc.folder_id, tc.topic, tc.color
         ORDER BY lastSession DESC`,
         [id]
     );
@@ -369,6 +370,7 @@ export async function getAllFolderTopics(userId?: string): Promise<{ folder_id: 
 
 export async function getUnfolderedTopics(userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
     const id = userId || getCurrentUserId();
+    // Get topics from sessions that don't have a topic_config with a folder
     return db.getAll(
         `SELECT 
             s.topic,
@@ -378,7 +380,8 @@ export async function getUnfolderedTopics(userId?: string): Promise<{ topic: str
             tc.color
         FROM sessions s
         LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
-        WHERE s.folder_id IS NULL AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        WHERE s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+              AND (tc.folder_id IS NULL OR tc.id IS NULL)
         GROUP BY s.topic, tc.color
         ORDER BY lastSession DESC`,
         [id]
@@ -388,10 +391,20 @@ export async function getUnfolderedTopics(userId?: string): Promise<{ topic: str
 export async function assignTopicToFolder(topic: string, folderId: string | null): Promise<void> {
     const userId = getCurrentUserId();
     const now = new Date().toISOString();
-    await db.execute(
-        'UPDATE sessions SET folder_id = ?, updated_at = ? WHERE user_id = ? AND topic = ?',
-        [folderId, now, userId, topic]
+    // Update folder assignment in topic_configs (not sessions)
+    const existing = await db.getOptional<TopicConfig>(
+        'SELECT * FROM topic_configs WHERE user_id = ? AND topic = ?',
+        [userId, topic]
     );
+    if (existing) {
+        await db.execute(
+            'UPDATE topic_configs SET folder_id = ?, updated_at = ? WHERE id = ?',
+            [folderId, now, existing.id]
+        );
+    } else {
+        // Create topic config if it doesn't exist
+        await upsertTopicConfig(topic, false, undefined, folderId);
+    }
 }
 
 export async function getFolderStats(folderId: string, userId?: string): Promise<{ totalTime: number; sessionCount: number; topicCount: number }> {
@@ -551,7 +564,12 @@ export async function getStatsForRange(startDate: string, endDate: string): Prom
 
 // ==================== TOPIC CONFIGS (Colors) ====================
 
-export async function upsertTopicConfig(topic: string, allowBackground: boolean, color?: string): Promise<void> {
+export async function upsertTopicConfig(
+    topic: string,
+    allowBackground: boolean,
+    color?: string,
+    folderId?: string | null
+): Promise<void> {
     const userId = getCurrentUserId();
     const now = new Date().toISOString();
 
@@ -563,16 +581,17 @@ export async function upsertTopicConfig(topic: string, allowBackground: boolean,
 
     if (existing) {
         const newColor = color !== undefined ? color : existing.color;
+        const newFolderId = folderId !== undefined ? folderId : existing.folder_id;
         await db.execute(
-            'UPDATE topic_configs SET allow_background = ?, color = ?, updated_at = ? WHERE id = ?',
-            [allowBackground ? 1 : 0, newColor, now, existing.id]
+            'UPDATE topic_configs SET allow_background = ?, color = ?, folder_id = ?, updated_at = ? WHERE id = ?',
+            [allowBackground ? 1 : 0, newColor, newFolderId, now, existing.id]
         );
     } else {
         const id = uuid();
         await db.execute(
-            `INSERT INTO topic_configs (id, user_id, topic, allow_background, color, created_at, updated_at)
-             VALUES (?, ?, ?, ?, ?, ?, ?)`,
-            [id, userId, topic, allowBackground ? 1 : 0, color || null, now, now]
+            `INSERT INTO topic_configs (id, user_id, topic, folder_id, allow_background, color, created_at, updated_at)
+             VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
+            [id, userId, topic, folderId || null, allowBackground ? 1 : 0, color || null, now, now]
         );
     }
 }
@@ -588,17 +607,30 @@ export async function getTopicConfig(topic: string): Promise<{ allowBackground: 
 
 // ==================== APP STATE (for session recovery) ====================
 
+// Prefix for app state keys in SecureStore
+const APP_STATE_PREFIX = 'app_state_';
+
 export async function setAppState(key: string, value: string): Promise<void> {
-    // Store in AsyncStorage or similar - PowerSync doesn't sync app_state
-    // For now, using a simple in-memory store
-    appStateStore.set(key, value);
+    try {
+        if (value) {
+            await SecureStore.setItemAsync(APP_STATE_PREFIX + key, value);
+        } else {
+            // Delete if empty value
+            await SecureStore.deleteItemAsync(APP_STATE_PREFIX + key);
+        }
+    } catch (error) {
+        console.warn('[AppState] Failed to save:', key, error);
+    }
 }
 
 export async function getAppState(key: string): Promise<string | null> {
-    return appStateStore.get(key) || null;
+    try {
+        return await SecureStore.getItemAsync(APP_STATE_PREFIX + key);
+    } catch (error) {
+        console.warn('[AppState] Failed to read:', key, error);
+        return null;
+    }
 }
-
-const appStateStore = new Map<string, string>();
 
 export async function recoverUnfinishedSession(): Promise<boolean> {
     const userId = getCurrentUserId();
