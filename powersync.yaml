@@ -1,0 +1,11 @@
+# PowerSync Hub > Sync Rules
+# Copy and paste this into your PowerSync Dashboard
+
+bucket_definitions:
+  user_data:
+    # Sync data only for the authenticated user
+    parameters: select request.user_id as user_id
+    data:
+      - select * from folders where user_id = bucket.user_id
+      - select * from sessions where user_id = bucket.user_id
+      - select * from topic_configs where user_id = bucket.user_id

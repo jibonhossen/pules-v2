@@ -1,24 +1,24 @@
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { Folder as FolderIcon, X, Check } from 'lucide-react-native';
-import * as React from 'react';
+import type { Folder } from '@/lib/database';
 import * as Haptics from 'expo-haptics';
+import { Check, Folder as FolderIcon, X } from 'lucide-react-native';
+import * as React from 'react';
 import {
     Modal,
     Pressable,
-    View,
-    StyleSheet,
     ScrollView,
+    StyleSheet,
+    View,
 } from 'react-native';
-import type { Folder } from '@/lib/database';
 
 interface SelectFolderModalProps {
     visible: boolean;
     folders: Folder[];
     topic: string;
     onClose: () => void;
-    onSelect: (folderId: number) => void;
+    onSelect: (folderId: string) => void;
 }
 
 export function SelectFolderModal({
@@ -31,7 +31,7 @@ export function SelectFolderModal({
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
 
-    const handleSelect = (folderId: number) => {
+    const handleSelect = (folderId: string) => {
         Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
         onSelect(folderId);
         onClose();

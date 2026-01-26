@@ -1,410 +1,410 @@
-import { CircularTimer } from '@/components/CircularTimer';
-import { SessionList } from '@/components/SessionList';
-import { TopicColorPicker } from '@/components/TopicColorPicker';
+import { AddTopicModal, CreateFolderModal, FolderCard, RenameTopicModal, SelectFolderModal, TopicItem } from '@/components/folders';
+import { SwipeProvider } from '@/components/SwipeContext';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { useAppState } from '@/hooks/useAppState';
+import {
+    createFolder,
+    createTopicInFolder,
+    deleteFolder,
+    deleteTopic,
+    getAllFolderTopics,
+    getFolders,
+    getUnfolderedTopics,
+    moveTopicToFolder,
+    renameAllSessionsWithTopic,
+    updateFolder,
+    upsertTopicConfig,
+    type Folder
+} from '@/lib/database';
 import { useSessionStore } from '@/store/sessions';
 import * as Haptics from 'expo-haptics';
-import { useLocalSearchParams, useRouter } from 'expo-router';
-import { FolderOpen, MoonStar, Palette, Pause, Play, Square, Sun } from 'lucide-react-native';
+import { useRouter } from 'expo-router';
+import { FolderOpen, Plus } from 'lucide-react-native';
 import * as React from 'react';
 import {
+    ActivityIndicator,
     Alert,
-    Keyboard,
-    KeyboardAvoidingView,
-    Platform,
     Pressable,
+    RefreshControl,
+    ScrollView,
     StyleSheet,
-    TextInput,
-    View
+    View,
 } from 'react-native';
-import Animated, {
-    useAnimatedStyle,
-    useSharedValue,
-    withSpring,
-} from 'react-native-reanimated';
-
-const AnimatedPressable = Animated.createAnimatedComponent(Pressable);
-
-type ViewMode = 'list' | 'focus';
-
-function SegmentedControl({
-    value,
-    onChange,
-}: {
-    value: ViewMode;
-    onChange: (value: ViewMode) => void;
-}) {
-    const { colorScheme } = useColorScheme();
-    const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-
-    const handleChange = (mode: ViewMode) => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        onChange(mode);
-    };
-
-    return (
-        <View style={[styles.segmentContainer, { backgroundColor: colors.muted }]}>
-            {(['list', 'focus'] as const).map((mode) => (
-                <Pressable
-                    key={mode}
-                    onPress={() => handleChange(mode)}
-                    style={[
-                        styles.segmentButton,
-                        value === mode && [
-                            styles.segmentButtonActive,
-                            {
-                                backgroundColor: colors.card,
-                                shadowColor: colors.primary,
-                            },
-                        ],
-                    ]}
-                >
-                    <Text
-                        style={[
-                            styles.segmentText,
-                            { color: value === mode ? colors.foreground : colors.mutedForeground },
-                            value === mode && styles.segmentTextActive,
-                        ]}
-                    >
-                        {mode.charAt(0).toUpperCase() + mode.slice(1)}
-                    </Text>
-                </Pressable>
-            ))}
-        </View>
-    );
-}
-
-function ThemeToggle() {
-    const { colorScheme, toggleColorScheme } = useColorScheme();
-    const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-
-    const handleToggle = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Light);
-        toggleColorScheme();
-    };
-
-    return (
-        <Pressable
-            onPress={handleToggle}
-            style={[styles.themeToggle, { backgroundColor: colors.muted }]}
-        >
-            {colorScheme === 'dark' ? (
-                <MoonStar size={20} color={colors.foreground} />
-            ) : (
-                <Sun size={20} color={colors.foreground} />
-            )}
-        </Pressable>
-    );
-}
-
-function TimerControlButton({
-    onPress,
-    disabled,
-    icon,
-    color,
-    style,
-}: {
-    onPress: () => void;
-    disabled?: boolean;
-    icon: React.ReactNode;
-    color: string;
-    style?: any;
-}) {
-    const scale = useSharedValue(1);
-
-    const animatedStyle = useAnimatedStyle(() => ({
-        transform: [{ scale: scale.value }],
-    }));
-
-    const handlePressIn = () => {
-        scale.value = withSpring(0.9, { damping: 15 });
-    };
-
-    const handlePressOut = () => {
-        scale.value = withSpring(1, { damping: 15 });
-    };
-
-    const handlePress = () => {
-        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
-        onPress();
-    };
-
-    return (
-        <AnimatedPressable
-            onPress={handlePress}
-            onPressIn={handlePressIn}
-            onPressOut={handlePressOut}
-            disabled={disabled}
-            style={[
-                animatedStyle,
-                styles.playButton,
-                {
-                    backgroundColor: color,
-                    shadowColor: color,
-                    opacity: disabled ? 0.5 : 1,
-                },
-                style
-            ]}
-        >
-            {icon}
-        </AnimatedPressable>
-    );
-}
-
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
-export default function TimerScreen() {
-    const router = useRouter(); // Added router
-    const params = useLocalSearchParams();
-    React.useEffect(() => {
-        if (params.mode === 'focus') {
-            setViewMode('focus');
-        }
-    }, [params.mode, params.t]);
+interface TopicData {
+    topic: string;
+    totalTime: number;
+    sessionCount: number;
+    lastSession: string;
+    color?: string | null;
+}
+
+interface FolderWithData extends Folder {
+    topics: TopicData[];
+    totalTime: number;
+}
+
+export default function FoldersScreen() {
+    const userId = useSessionStore((state) => state.userId);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-    const insets = useSafeAreaInsets();
+    const router = useRouter();
+    const { startTimer, isRunning, currentTopic } = useSessionStore();
 
-    const [viewMode, setViewMode] = React.useState<ViewMode>('focus');
-    const [topic, setTopic] = React.useState('');
-    const [colorPickerVisible, setColorPickerVisible] = React.useState(false);
-    const [topicColor, setTopicColor] = React.useState<string | null>(null);
+    const [folders, setFolders] = React.useState<FolderWithData[]>([]);
+    const [unfolderedTopics, setUnfolderedTopics] = React.useState<TopicData[]>([]);
+    const [refreshing, setRefreshing] = React.useState(false);
+    const [isLoading, setIsLoading] = React.useState(true); // Initial load state
+    const [modalVisible, setModalVisible] = React.useState(false);
+    const [editingFolder, setEditingFolder] = React.useState<Folder | null>(null);
+    const [addTopicModalVisible, setAddTopicModalVisible] = React.useState(false);
+    const [selectedFolderForTopic, setSelectedFolderForTopic] = React.useState<{ id: string; name: string; color: string } | null>(null);
+    const [moveTopicModalVisible, setMoveTopicModalVisible] = React.useState(false);
+    const [topicToMove, setTopicToMove] = React.useState('');
+    const [renameTopicModalVisible, setRenameTopicModalVisible] = React.useState(false);
+    const [topicToRename, setTopicToRename] = React.useState('');
 
-    const {
-        isRunning,
-        isPaused,
-        elapsedSeconds,
-        currentTopic,
-        currentFolderName,
-        startTimer,
-        stopTimer,
-        pauseTimer,
-        resumeTimer,
-        tick,
-        loadSessions,
-        loadStats,
-        updateTopicColor,
-        onAppBackground,
-        onAppForeground,
-    } = useSessionStore();
+    const loadData = React.useCallback(async (showLoading = false) => {
+        if (!userId) return;
+        if (showLoading) setIsLoading(true);
 
-    // Handle app state changes
-    useAppState(onAppBackground, onAppForeground);
+        try {
+            console.time('loadData');
+            // Fetch all data in parallel batches
+            const [allFolders, allTopics, unfoldered] = await Promise.all([
+                getFolders(userId),
+                getAllFolderTopics(userId),
+                getUnfolderedTopics(userId)
+            ]);
 
-    // Timer tick effect
-    React.useEffect(() => {
-        let interval: ReturnType<typeof setInterval> | undefined;
-        if (isRunning && !isPaused) {
-            interval = setInterval(tick, 1000);
-        }
-        return () => {
-            if (interval) clearInterval(interval);
-        };
-    }, [isRunning, isPaused, tick]);
+            console.log('[UI] Fetched:', allFolders.length, 'folders,', allTopics.length, 'topics');
 
-    // Load data on mount
-    React.useEffect(() => {
-        loadSessions();
-        loadStats();
-    }, []);
-
-    // Sync local topic
-    React.useEffect(() => {
-        if (currentTopic && isRunning) {
-            setTopic(currentTopic);
-        }
-    }, [currentTopic, isRunning]);
-
-    const handleStart = async () => {
-        if (topic.trim()) {
-            if (isRunning) {
-                Alert.alert(
-                    'Start New Session?',
-                    `"${currentTopic}" is currently running. Save it and start "${topic}"?`,
-                    [
-                        { text: 'Cancel', style: 'cancel' },
-                        {
-                            text: 'Start',
-                            style: 'default',
-                            onPress: async () => {
-                                await startTimer(topic.trim());
-                                Keyboard.dismiss();
-                            },
-                        },
-                    ]
-                );
+            if (!allFolders) {
+                setFolders([]);
                 return;
             }
-            await startTimer(topic.trim());
-            Keyboard.dismiss();
+
+            // Map topics to folders in memory (much faster than N+1 queries)
+            const topicMap = new Map<string, TopicData[]>();
+            allTopics.forEach(t => {
+                const folderId = t.folder_id;
+                if (!topicMap.has(folderId)) topicMap.set(folderId, []);
+                topicMap.get(folderId)?.push({
+                    topic: t.topic,
+                    totalTime: t.totalTime,
+                    sessionCount: t.sessionCount,
+                    lastSession: t.lastSession,
+                    color: t.color
+                });
+            });
+
+            const foldersWithData: FolderWithData[] = allFolders.map(folder => {
+                const topics = topicMap.get(folder.id) || [];
+                const totalTime = topics.reduce((sum, t) => sum + t.totalTime, 0);
+                return {
+                    ...folder,
+                    topics,
+                    totalTime,
+                };
+            });
+
+            setFolders(foldersWithData);
+            setUnfolderedTopics(unfoldered);
+            console.timeEnd('loadData');
+        } catch (error) {
+            console.error('Failed to load folders:', error);
+        } finally {
+            setIsLoading(false);
+        }
+    }, [userId]);
+
+    React.useEffect(() => {
+        if (userId) {
+            loadData(true); // Show loading only on first mount/user change
+        }
+    }, [loadData, userId]);
+
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        try {
+            // PowerSync handles sync automatically
+            await loadData(false);
+        } catch (e) {
+            console.error('Refresh failed', e);
+            Alert.alert('Error', 'Failed to refresh data');
+        } finally {
+            setRefreshing(false);
+        }
+    }, [loadData]);
+
+    const handleCreateFolder = () => {
+        Haptics.impactAsync(Haptics.ImpactFeedbackStyle.Medium);
+        setEditingFolder(null);
+        setModalVisible(true);
+    };
+
+    const handleEditFolder = (folder: Folder) => {
+        setEditingFolder(folder);
+        setModalVisible(true);
+    };
+
+    const handleSaveFolder = async (name: string, color: string) => {
+        try {
+            if (editingFolder) {
+                await updateFolder(editingFolder.id, name, color, 'folder');
+            } else {
+                await createFolder(name, color);
+            }
+            await loadData();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to save folder');
         }
     };
 
-    const handleStop = async () => {
-        await stopTimer();
-        setTopic('');
-    };
-
-    const handleTogglePause = () => {
-        if (isPaused) {
-            resumeTimer();
-        } else {
-            pauseTimer();
+    const handleDeleteFolder = async (folder: Folder) => {
+        try {
+            await deleteFolder(folder.id);
+            await loadData();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to delete folder');
         }
     };
 
-    const handleContinueSession = async (sessionTopic: string, folderId: number | null) => {
+    const handleFolderAnalytics = (folder: Folder) => {
+        router.push(`/analytics/folder/${folder.id}`);
+    };
+
+    const handleStartTopic = async (topic: string, folderId?: string) => {
         if (isRunning) {
             Alert.alert(
                 'Start New Session?',
-                `"${currentTopic}" is currently running. Save it and start "${sessionTopic}"?`,
+                `"${currentTopic}" is currently running. Save it and start "${topic}"?`,
                 [
                     { text: 'Cancel', style: 'cancel' },
                     {
                         text: 'Start',
                         style: 'default',
                         onPress: async () => {
-                            // Force update params to trigger the useEffect that switches mode
-                            router.setParams({ mode: 'focus', t: Date.now().toString() });
-                            setTopic(sessionTopic);
-                            await startTimer(sessionTopic, folderId ?? undefined);
+                            await startTimer(topic, folderId);
+                            router.push(`/timer?mode=focus&t=${Date.now()}`);
                         },
                     },
                 ]
             );
             return;
         }
-        // Force update params to trigger the useEffect that switches mode
-        router.setParams({ mode: 'focus', t: Date.now().toString() });
-        setTopic(sessionTopic);
-        await startTimer(sessionTopic, folderId ?? undefined);
+        await startTimer(topic, folderId);
+        router.push(`/timer?mode=focus&t=${Date.now()}`);
     };
 
+    const handleTopicAnalytics = (topic: string) => {
+        router.push(`/analytics/topic/${encodeURIComponent(topic)}`);
+    };
+
+    const handleAddTopic = (folderId: string, folderName: string) => {
+        const folder = folders.find(f => f.id === folderId);
+        setSelectedFolderForTopic({
+            id: folderId,
+            name: folderName,
+            color: folder?.color || colors.primary
+        });
+        setAddTopicModalVisible(true);
+    };
+
+    const handleSaveNewTopic = async (topicName: string, allowBackground: boolean, color: string) => {
+        if (selectedFolderForTopic && topicName.trim()) {
+            // createTopicInFolder now handles color and folder assignment via upsertTopicConfig
+            await createTopicInFolder(topicName.trim(), selectedFolderForTopic.id, color);
+            // Update allow_background setting if enabled
+            if (allowBackground) {
+                await upsertTopicConfig(topicName.trim(), true, color, selectedFolderForTopic.id);
+            }
+            setAddTopicModalVisible(false);
+            loadData(); // Reload to show the new topic
+        }
+    };
+
+    const handleDeleteTopic = async (topic: string) => {
+        try {
+            await deleteTopic(topic);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await loadData();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to delete topic');
+        }
+    };
+
+    const handleUnorganizedTopicPress = (topic: string) => {
+        setTopicToMove(topic);
+        setMoveTopicModalVisible(true);
+    };
+
+    const handleMoveTopic = async (folderId: string) => {
+        if (topicToMove) {
+            await moveTopicToFolder(topicToMove, folderId);
+            await loadData();
+        }
+    };
+
+    const handleOpenRenameTopic = (topic: string) => {
+        setTopicToRename(topic);
+        setRenameTopicModalVisible(true);
+    };
+
+    const handleRenameTopic = async (oldTopic: string, newTopic: string) => {
+        try {
+            await renameAllSessionsWithTopic(oldTopic, newTopic);
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            await loadData();
+        } catch (error) {
+            Alert.alert('Error', 'Failed to rename topic');
+        }
+    };
+
+    const insets = useSafeAreaInsets();
+
     return (
-        <KeyboardAvoidingView
-            behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
-            style={[
+
+        <SwipeProvider>
+            <View style={[
                 styles.container,
                 {
                     backgroundColor: colors.background,
                     paddingTop: insets.top,
                 }
-            ]}
-        >
-            {/* Header */}
-            <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.foreground }]}>Pulse</Text>
-                <ThemeToggle />
-            </View>
+            ]}>
+                {/* Header */}
+                <View style={styles.header}>
+                    <Text style={[styles.title, { color: colors.foreground }]}>Folders</Text>
+                    <Pressable
+                        onPress={handleCreateFolder}
+                        style={[styles.addButton, { backgroundColor: colors.primary }]}
+                    >
+                        <Plus size={22} color="#fff" />
+                    </Pressable>
+                </View>
 
-            {/* Segmented Control */}
-            <View style={styles.segmentWrapper}>
-                <SegmentedControl value={viewMode} onChange={setViewMode} />
-            </View>
+                <ScrollView
+                    style={styles.scrollView}
+                    contentContainerStyle={styles.scrollContent}
+                    keyboardShouldPersistTaps="handled"
 
-            {/* Content */}
-            <View style={styles.content}>
-                {viewMode === 'focus' ? (
-                    <View style={styles.timerContainer}>
-                        <CircularTimer
-                            elapsedSeconds={elapsedSeconds}
-                            isRunning={isRunning}
+                    refreshControl={
+                        <RefreshControl
+                            refreshing={refreshing}
+                            onRefresh={onRefresh}
+                            tintColor={colors.primary}
                         />
-                    </View>
-                ) : (
-                    <SessionList onStartSession={handleContinueSession} />
-                )}
-            </View>
-
-            {/* Input Section */}
-            <View style={[styles.inputSection, { borderTopColor: colors.border }]}>
-                {!isRunning ? (
-                    <View style={styles.inputRow}>
-                        <View style={[styles.inputContainer, { backgroundColor: colors.card }]}>
-                            <TextInput
-                                placeholder="I'm working on..."
-                                placeholderTextColor={colors.mutedForeground}
-                                value={topic}
-                                onChangeText={setTopic}
-                                style={[styles.input, { color: colors.foreground }]}
-                            />
+                    }
+                >
+                    {isLoading ? (
+                        <View style={{ paddingTop: 100, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color={colors.primary} />
                         </View>
-                        <Pressable
-                            onPress={() => setColorPickerVisible(true)}
-                            style={{
-                                width: 44,
-                                height: 52,
-                                alignItems: 'center',
-                                justifyContent: 'center',
-                                backgroundColor: colors.card,
-                                borderRadius: 16,
-                            }}
-                        >
-                            <Palette size={20} color={topicColor || colors.mutedForeground} />
-                        </Pressable>
-                        <TimerControlButton
-                            onPress={handleStart}
-                            disabled={!topic.trim()}
-                            color={colors.primary}
-                            icon={<Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />}
-                        />
-                    </View>
-                ) : (
-                    <View style={styles.controlsColumn}>
-                        {/* Controls */}
-                        <View style={styles.controlsRow}>
-                            <TimerControlButton
-                                onPress={handleTogglePause}
-                                color={isPaused ? colors.primary : '#F59E0B'} // Resume = Primary, Pause = Orange
-                                icon={
-                                    isPaused ? (
-                                        <Play size={24} color="#fff" fill="#fff" style={{ marginLeft: 3 }} />
-                                    ) : (
-                                        <Pause size={24} color="#fff" fill="#fff" />
-                                    )
-                                }
-                            />
-                            <TimerControlButton
-                                onPress={handleStop}
-                                color={colors.destructive}
-                                icon={<Square size={22} color="#fff" fill="#fff" />}
-                            />
-                        </View>
-
-                        {/* Info */}
-                        <View style={styles.focusingContainer}>
-                            <Text variant="muted" style={styles.focusingText}>
-                                Currently {isPaused ? 'paused' : 'focusing'} on: <Text style={{ color: colors.primary }}>{topic}</Text>
+                    ) : folders.length === 0 && unfolderedTopics.length === 0 ? (
+                        <View style={styles.emptyState}>
+                            <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}20` }]}>
+                                <FolderOpen size={48} color={colors.primary} />
+                            </View>
+                            <Text style={[styles.emptyTitle, { color: colors.foreground }]}>
+                                No folders yet
                             </Text>
-                            {currentFolderName && (
-                                <View style={[styles.folderBadge, { backgroundColor: `${colors.primary}20` }]}>
-                                    <FolderOpen size={12} color={colors.primary} />
-                                    <Text style={[styles.folderBadgeText, { color: colors.primary }]}>
-                                        {currentFolderName}
+                            <Text variant="muted" style={styles.emptySubtitle}>
+                                Create a folder to organize your focus topics
+                            </Text>
+                            <Pressable
+                                onPress={handleCreateFolder}
+                                style={[styles.emptyButton, { backgroundColor: colors.primary }]}
+                            >
+                                <Plus size={18} color="#fff" />
+                                <Text style={styles.emptyButtonText}>Create Folder</Text>
+                            </Pressable>
+                        </View>
+                    ) : (
+                        <>
+                            {folders.map((folder) => (
+                                <FolderCard
+                                    key={folder.id}
+                                    folder={folder}
+                                    topics={folder.topics}
+                                    totalTime={folder.totalTime}
+                                    onEdit={handleEditFolder}
+                                    onDelete={handleDeleteFolder}
+                                    onAnalytics={handleFolderAnalytics}
+                                    onAddTopic={handleAddTopic}
+                                    onStartTopic={(topic, folderId) => handleStartTopic(topic, folderId)}
+                                    onTopicAnalytics={handleTopicAnalytics}
+                                    onDeleteTopic={handleDeleteTopic}
+                                    onRenameTopic={handleOpenRenameTopic}
+                                />
+                            ))}
+
+                            {/* Unfoldered topics */}
+                            {unfolderedTopics.length > 0 && (
+                                <View style={styles.unfolderedSection}>
+                                    <Text variant="muted" style={styles.sectionTitle}>
+                                        Unorganized Topics
                                     </Text>
+                                    <View style={{ gap: 8 }}>
+                                        {unfolderedTopics.map((topic) => (
+                                            <TopicItem
+                                                key={topic.topic}
+                                                topic={topic.topic}
+                                                totalTime={topic.totalTime}
+                                                sessionCount={topic.sessionCount}
+                                                lastSession={topic.lastSession}
+                                                color={topic.color}
+                                                onStart={handleStartTopic}
+                                                onAnalytics={handleTopicAnalytics}
+                                                onDelete={handleDeleteTopic}
+                                                onMove={handleUnorganizedTopicPress}
+                                                onRename={handleOpenRenameTopic}
+                                            />
+                                        ))}
+                                    </View>
                                 </View>
                             )}
-                        </View>
-                    </View>
-                )}
+                        </>
+                    )}
+                </ScrollView>
+
+                <CreateFolderModal
+                    visible={modalVisible}
+                    folder={editingFolder}
+                    onClose={() => setModalVisible(false)}
+                    onSave={handleSaveFolder}
+                />
+
+                <AddTopicModal
+                    visible={addTopicModalVisible}
+                    folderName={selectedFolderForTopic?.name || ''}
+                    folderColor={selectedFolderForTopic?.color || colors.primary}
+                    onClose={() => setAddTopicModalVisible(false)}
+                    onSave={handleSaveNewTopic}
+                />
+
+                <SelectFolderModal
+                    visible={moveTopicModalVisible}
+                    folders={folders}
+                    topic={topicToMove}
+                    onClose={() => setMoveTopicModalVisible(false)}
+                    onSelect={handleMoveTopic}
+                />
+
+                <RenameTopicModal
+                    visible={renameTopicModalVisible}
+                    currentTopic={topicToRename}
+                    onClose={() => setRenameTopicModalVisible(false)}
+                    onSave={handleRenameTopic}
+                />
             </View>
-            <TopicColorPicker
-                visible={colorPickerVisible}
-                onClose={() => setColorPickerVisible(false)}
-                onSelect={(color) => {
-                    setTopicColor(color); // Local feedback
-                    if (topic.trim()) {
-                        updateTopicColor(topic.trim(), color);
-                    }
-                }}
-                selectedColor={topicColor}
-            />
-        </KeyboardAvoidingView>
+        </SwipeProvider>
     );
+
 }
+
 const styles = StyleSheet.create({
     container: {
         flex: 1,
@@ -420,112 +420,77 @@ const styles = StyleSheet.create({
         fontSize: 28,
         fontWeight: '700',
     },
-    themeToggle: {
-        borderRadius: 20,
-        padding: 10,
+    addButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 22,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
-    segmentWrapper: {
+    scrollView: {
+        flex: 1,
+    },
+    scrollContent: {
         paddingHorizontal: 20,
-        paddingBottom: 16,
+        paddingBottom: 20,
     },
-    segmentContainer: {
-        flexDirection: 'row',
-        borderRadius: 12,
-        padding: 4,
-    },
-    segmentButton: {
+    emptyState: {
         flex: 1,
         alignItems: 'center',
-        paddingVertical: 10,
-        paddingHorizontal: 16,
-        borderRadius: 10,
+        justifyContent: 'center',
+        paddingTop: 100,
     },
-    segmentButtonActive: {
-        shadowOffset: { width: 0, height: 2 },
-        shadowOpacity: 0.15,
-        shadowRadius: 4,
-        elevation: 3,
+    emptyIcon: {
+        padding: 24,
+        borderRadius: 32,
+        marginBottom: 20,
     },
-    segmentText: {
-        fontSize: 14,
-        fontWeight: '500',
-    },
-    segmentTextActive: {
+    emptyTitle: {
+        fontSize: 20,
         fontWeight: '600',
+        marginBottom: 8,
     },
-    content: {
-        flex: 1,
-    },
-    timerContainer: {
-        flex: 1,
-        alignItems: 'center',
-        justifyContent: 'center',
-    },
-    inputSection: {
-        borderTopWidth: 1,
-        paddingHorizontal: 20,
-        paddingTop: 16,
-        paddingBottom: 16,
-    },
-    inputRow: {
-        flexDirection: 'row',
-        alignItems: 'center',
-        gap: 12,
-    },
-    inputContainer: {
-        flex: 1,
-        flexDirection: 'row',
-        alignItems: 'center',
-        borderRadius: 16,
-        paddingHorizontal: 16,
-        height: 52,
-    },
-    input: {
-        flex: 1,
-        fontSize: 16,
-        fontFamily: 'Poppins_400Regular',
-    },
-    playButton: {
-        width: 56,
-        height: 56,
-        borderRadius: 28,
-        alignItems: 'center',
-        justifyContent: 'center',
-        shadowOffset: { width: 0, height: 4 },
-        shadowOpacity: 0.4,
-        shadowRadius: 8,
-        elevation: 8,
-    },
-    focusingText: {
+    emptySubtitle: {
         fontSize: 14,
         textAlign: 'center',
+        marginBottom: 24,
     },
-    focusingContainer: {
-        marginTop: 12,
-        alignItems: 'center',
-        gap: 6,
-    },
-    folderBadge: {
+    emptyButton: {
         flexDirection: 'row',
         alignItems: 'center',
-        gap: 6,
-        paddingHorizontal: 10,
-        paddingVertical: 4,
+        gap: 8,
+        paddingHorizontal: 20,
+        paddingVertical: 12,
         borderRadius: 12,
     },
-    folderBadgeText: {
-        fontSize: 12,
+    emptyButtonText: {
+        color: '#fff',
         fontWeight: '600',
     },
-    controlsColumn: {
-        alignItems: 'center',
-        width: '100%',
+    unfolderedSection: {
+        marginTop: 24,
     },
-    controlsRow: {
+    sectionTitle: {
+        fontSize: 14,
+        fontWeight: '600',
+        marginBottom: 12,
+    },
+    unfolderedCard: {
+        borderRadius: 16,
+        overflow: 'hidden',
+    },
+    unfolderedItem: {
         flexDirection: 'row',
         alignItems: 'center',
-        justifyContent: 'center',
-        gap: 32,
-        marginBottom: 8,
+        justifyContent: 'space-between',
+        padding: 14,
+    },
+    unfolderedTopic: {
+        flex: 1,
+        fontSize: 15,
+        fontWeight: '500',
+    },
+    unfolderedStats: {
+        fontSize: 12,
     },
 });

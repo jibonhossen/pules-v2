@@ -1,5 +1,5 @@
-import { Tabs } from 'expo-router';
 import { CustomTabBar } from '@/components/CustomTabBar';
+import { Tabs } from 'expo-router';
 
 export default function TabLayout() {
     return (
@@ -12,13 +12,13 @@ export default function TabLayout() {
             <Tabs.Screen
                 name="index"
                 options={{
-                    title: 'Timer',
+                    title: 'Folders',
                 }}
             />
             <Tabs.Screen
-                name="folders"
+                name="timer"
                 options={{
-                    title: 'Folders',
+                    title: 'Timer',
                 }}
             />
             <Tabs.Screen

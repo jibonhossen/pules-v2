@@ -36,8 +36,8 @@ interface FolderCardProps {
     onEdit: (folder: Folder) => void;
     onDelete: (folder: Folder) => void;
     onAnalytics: (folder: Folder) => void;
-    onAddTopic: (folderId: number, folderName: string) => void;
-    onStartTopic: (topic: string, folderId: number) => void;
+    onAddTopic: (folderId: string, folderName: string) => void;
+    onStartTopic: (topic: string, folderId: string) => void;
     onTopicAnalytics: (topic: string) => void;
     onDeleteTopic: (topic: string) => void;
     onRenameTopic: (topic: string) => void;

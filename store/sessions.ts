@@ -5,13 +5,12 @@ import {
     getAppState,
     getCurrentStreak,
     getFolderById,
-    getTodaySessions,
     getTopicConfig,
-    getTotalFocusTime,
     recoverUnfinishedSession,
     setAppState,
+    setCurrentUserId,
     upsertTopicConfig,
-    type Session,
+    type Session
 } from '@/lib/database';
 import { activateKeepAwakeAsync, deactivateKeepAwake } from 'expo-keep-awake';
 import { create } from 'zustand';
@@ -22,14 +21,15 @@ interface TimerState {
     isRunning: boolean;
     isPaused: boolean;
     elapsedSeconds: number;
-    startTime: number | null; // Unix timestamp when timer  started (for accurate recovery)
-    pausedAt: number | null;  // Timestamp when paused (for calculating elapsed while paused)
-    currentSessionId: number | null;
+    startTime: number | null; // Unix timestamp when timer started
+    pausedAt: number | null;  // Timestamp when paused
+    currentSessionId: string | null; // Changed to string for UUID
     currentTopic: string;
-    currentFolderId: number | null;
+    currentFolderId: string | null; // Changed to string for UUID
     currentFolderName: string;
     isBackgroundAllowed: boolean;
     autoPaused: boolean;
+    userId: string | null;
 
     // Session data
     sessions: Session[];
@@ -38,7 +38,7 @@ interface TimerState {
     currentStreak: number;
 
     // Timer actions
-    startTimer: (topic: string, folderId?: number) => Promise<void>;
+    startTimer: (topic: string, folderId?: string) => Promise<void>;
     pauseTimer: () => Promise<void>;
     resumeTimer: () => Promise<void>;
     stopTimer: () => Promise<void>;
@@ -53,6 +53,7 @@ interface TimerState {
     loadSessions: () => Promise<void>;
     loadStats: () => Promise<void>;
     updateTopicColor: (topic: string, color: string) => Promise<void>;
+    setUserId: (userId: string | null) => void;
 }
 
 export const useSessionStore = create<TimerState>((set, get) => ({
@@ -68,12 +69,13 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     currentFolderName: '',
     isBackgroundAllowed: false,
     autoPaused: false,
+    userId: null,
     sessions: [],
     todaySessions: [],
     totalFocusTime: 0,
     currentStreak: 0,
 
-    startTimer: async (topic: string, folderId?: number) => {
+    startTimer: async (topic: string, folderId?: string) => {
         // If a timer is already running, stop it first to save the session
         const currentState = get();
         if (currentState.isRunning && currentState.currentSessionId) {
@@ -165,7 +167,8 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             autoPaused: false,
         });
         await deactivateKeepAwake();
-        // Refresh data
+
+        // Refresh data - PowerSync handles sync automatically
         get().loadSessions();
         get().loadStats();
     },
@@ -240,9 +243,12 @@ export const useSessionStore = create<TimerState>((set, get) => ({
     },
 
     loadSessions: async () => {
-        // "When user completely close the app save the session"
-        // This runs on App Launch. If we find a persisted session, it means the app was killed.
-        // We should END that session and save it, rather than resuming it.
+        const { userId } = get();
+        // Skip if user is not authenticated yet
+        if (!userId) {
+            console.log('[Timer] Skipping loadSessions - user not authenticated');
+            return;
+        }
 
         try {
             const savedStateStr = await getAppState('timer_state');
@@ -250,42 +256,8 @@ export const useSessionStore = create<TimerState>((set, get) => ({
                 const savedState = JSON.parse(savedStateStr);
 
                 if (savedState.currentSessionId && savedState.startTime) {
-                    console.log('[Timer] Found persisted session from previous run. Ending it as per request.');
-
-                    // Logic to calculate final duration
-                    let finalDuration = 0;
-                    if (savedState.pausedAt) {
-                        // It was paused when killed (or paused right before kill)
-                        finalDuration = Math.floor((savedState.pausedAt - savedState.startTime) / 1000);
-                    } else {
-                        // It was running when killed. 
-                        // We can't know exactly WHEN it was killed, but 'elapsedSeconds' in state 
-                        // reflects the last tick seen by UI. 
-                        // Or we can use 'last_active_timestamp' if we saved it?
-                        // Let's use the safer bet: elapsedSeconds from state, or (last_active - start).
-                        finalDuration = savedState.elapsedSeconds || 0;
-                    }
-
-                    // End the session in DB
-                    // Note: 'endSession' usually takes current time as end time.
-                    // We might need to manually update the record if we want specific duration?
-                    // 'endSession' implementation in database.ts updates duration = (now - start_time - pauses).
-                    // This logic assumes "Now" is end time. But "Now" is way later.
-                    // So we should manually update the session in DB if possible, or just accept 'elapsedSeconds' as truth.
-
-                    // Actually, endSession(id) sets end_time = now.
-                    // If we want to "Save" what was done, we just want to ensure the DURATION is correct.
-                    // The DB 'endSession' might overwrite duration based on wrong times.
-                    // But wait, if we call `recoverUnfinishedSession`, it usually marks it as incomplete or something.
-
-                    // Let's rely on `recoverUnfinishedSession` but maybe tweak behavior?
-                    // Or reuse `endSession` but pass a flag?
-                    // Actually, if we just want to Close it, `recoverUnfinishedSession` is designed for this!
-                    // It finds open sessions and closes them.
-
+                    console.log('[Timer] Found persisted session from previous run. Ending it.');
                     await recoverUnfinishedSession();
-
-                    // Clear persistence
                     await setAppState('timer_state', '');
                 }
             } else {
@@ -293,25 +265,30 @@ export const useSessionStore = create<TimerState>((set, get) => ({
             }
         } catch (e) {
             console.error("Failed to recover", e);
-            await recoverUnfinishedSession();
+            try {
+                await recoverUnfinishedSession();
+            } catch (innerE) {
+                console.error("Failed to recover (retry)", innerE);
+            }
         }
 
-        const [sessions, todaySessions] = await Promise.all([
+        // Just load all sessions for internal logic if needed, but UI uses reactive hooks
+        const [sessions] = await Promise.all([
             getAllSessions(),
-            getTodaySessions(),
         ]);
-        set({ sessions, todaySessions });
+        set({ sessions });
 
         // Also load stats
-        get().loadStats();
+        // get().loadStats(); // Removed manual call
     },
 
     loadStats: async () => {
-        const [totalFocusTime, currentStreak] = await Promise.all([
-            getTotalFocusTime(),
-            getCurrentStreak(),
-        ]);
-        set({ totalFocusTime, currentStreak });
+        // Deprecated: statistics are now loaded reactively via useLiveStats
+        const { userId } = get();
+        if (!userId) return; // Guard against race conditions
+
+        const currentStreak = await getCurrentStreak();
+        set({ currentStreak });
     },
 
     updateTopicColor: async (topic: string, color: string) => {
@@ -320,5 +297,10 @@ export const useSessionStore = create<TimerState>((set, get) => ({
         // Refresh sessions to update colors
         get().loadSessions();
     },
-}));
 
+    setUserId: (userId: string | null) => {
+        set({ userId });
+        // Update the database layer with current user ID
+        setCurrentUserId(userId);
+    },
+}));

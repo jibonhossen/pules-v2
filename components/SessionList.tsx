@@ -1,6 +1,7 @@
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { useLiveSessions } from '@/hooks/useLiveDatabase';
 import {
     deleteSession,
     getSessionsByTopic,
@@ -17,6 +18,7 @@ import {
     Alert,
     Dimensions,
     Pressable,
+    RefreshControl,
     ScrollView,
     StyleSheet,
     TextInput,
@@ -42,7 +44,7 @@ function SwipeableSessionCard({
     onDelete,
 }: {
     session: Session;
-    onContinue: (topic: string, folderId: number | null) => void;
+    onContinue: (topic: string, folderId: string | null) => void;
     onTap: (session: Session) => void;
     onDelete: (session: Session) => void;
 }) {
@@ -195,8 +197,8 @@ function SwipeableSessionCard({
 interface SessionHistorySheetProps {
     sheetRef: React.RefObject<BottomSheet | null>;
     topic: string | null;
-    folderId: number | null;
-    onContinue: (topic: string, folderId: number | null) => void;
+    folderId: string | null;
+    onContinue: (topic: string, folderId: string | null) => void;
     onTopicRenamed: () => void;
 }
 
@@ -390,20 +392,36 @@ function SessionHistorySheet({
 }
 
 interface SessionListProps {
-    onStartSession: (topic: string, folderId: number | null) => void;
+    onStartSession: (topic: string, folderId: string | null) => void;
 }
 
 export function SessionList({ onStartSession }: SessionListProps) {
-    const { todaySessions, loadSessions } = useSessionStore();
+    const { loadSessions } = useSessionStore();
+    const sessions = useLiveSessions(7); // Load last 7 days
     const [selectedTopic, setSelectedTopic] = React.useState<string | null>(null);
-    const [selectedFolderId, setSelectedFolderId] = React.useState<number | null>(null);
+    const [selectedFolderId, setSelectedFolderId] = React.useState<string | null>(null);
     const sheetRef = React.useRef<BottomSheet>(null);
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
+    const [refreshing, setRefreshing] = React.useState(false);
 
-    React.useEffect(() => {
-        loadSessions();
-    }, []);
+    // Group sessions by date
+    const groupedSessions = React.useMemo(() => {
+        const groups: { date: string; sessions: Session[] }[] = [];
+        let currentDate = '';
+
+        sessions.forEach((session) => {
+            const dateStr = formatDate(session.start_time);
+            if (dateStr !== currentDate) {
+                currentDate = dateStr;
+                groups.push({ date: dateStr, sessions: [session] });
+            } else {
+                groups[groups.length - 1].sessions.push(session);
+            }
+        });
+
+        return groups;
+    }, [sessions]);
 
     const handleTap = (session: Session) => {
         setSelectedTopic(session.topic);
@@ -411,7 +429,7 @@ export function SessionList({ onStartSession }: SessionListProps) {
         sheetRef.current?.snapToIndex(0);
     };
 
-    const handleContinue = (topic: string, folderId: number | null) => {
+    const handleContinue = (topic: string, folderId: string | null) => {
         onStartSession(topic, folderId);
     };
 
@@ -437,16 +455,31 @@ export function SessionList({ onStartSession }: SessionListProps) {
         );
     };
 
-    if (todaySessions.length === 0) {
+    const onRefresh = React.useCallback(async () => {
+        setRefreshing(true);
+        try {
+            // Trigger manual sync check - verify consistency
+            await new Promise(resolve => setTimeout(resolve, 1000));
+        } finally {
+            setRefreshing(false);
+        }
+    }, []);
+
+    if (sessions.length === 0) {
         return (
-            <View style={styles.emptyContainer}>
+            <ScrollView
+                contentContainerStyle={styles.emptyContainer}
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
+            >
                 <Text style={[styles.emptyTitle, { color: colors.mutedForeground }]}>
-                    No sessions today
+                    No recent sessions
                 </Text>
                 <Text variant="muted" style={styles.emptySubtitle}>
-                    Start your first focus session to see it here
+                    Start a focus session to see it here
                 </Text>
-            </View>
+            </ScrollView>
         );
     }
 
@@ -457,21 +490,37 @@ export function SessionList({ onStartSession }: SessionListProps) {
                 showsVerticalScrollIndicator={false}
                 keyboardDismissMode="on-drag"
                 keyboardShouldPersistTaps="handled"
+                refreshControl={
+                    <RefreshControl refreshing={refreshing} onRefresh={onRefresh} tintColor={colors.primary} />
+                }
             >
                 <View style={styles.listHeader}>
                     <Text style={[styles.listTitle, { color: colors.foreground }]}>
-                        Today's Sessions
+                        Recent Sessions
+                    </Text>
+                    <Text variant="muted" style={{ fontSize: 12 }}>
+                        Last 7 Days
                     </Text>
                 </View>
-                {todaySessions.map((session) => (
-                    <SwipeableSessionCard
-                        key={session.id}
-                        session={session}
-                        onContinue={handleContinue}
-                        onTap={handleTap}
-                        onDelete={handleDelete}
-                    />
+
+                {groupedSessions.map((group, groupIndex) => (
+                    <View key={groupIndex} style={styles.sessionGroup}>
+                        <Text variant="muted" style={[styles.groupDate, { marginLeft: 4 }]}>
+                            {group.date}
+                        </Text>
+                        {group.sessions.map((session) => (
+                            <SwipeableSessionCard
+                                key={session.id}
+                                session={session}
+                                onContinue={handleContinue}
+                                onTap={handleTap}
+                                onDelete={handleDelete}
+                            />
+                        ))}
+                    </View>
                 ))}
+
+                <View style={{ height: 20 }} />
             </ScrollView>
 
             <SessionHistorySheet

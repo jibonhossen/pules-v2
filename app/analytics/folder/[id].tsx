@@ -1,19 +1,19 @@
-import { Text } from '@/components/ui/Text';
-import { StatsCard } from '@/components/StatsCard';
 import { DailyReport } from '@/components/DailyReport';
+import { StatsCard } from '@/components/StatsCard';
+import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { getFolderById, getFolderStats, getFolderDailyStatsForRange, getTopicsByFolder, getFolderStatsForRange } from '@/lib/database';
+import { getFolderById, getFolderDailyStatsForRange, getFolderStatsForRange, getTopicsByFolder } from '@/lib/database';
 import { formatDuration } from '@/lib/utils';
-import { useLocalSearchParams, useRouter, Stack } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { ArrowLeft, Clock, Hash, Layers } from 'lucide-react-native';
 import * as React from 'react';
 import {
+    Pressable,
     RefreshControl,
     ScrollView,
-    Pressable,
-    View,
     StyleSheet,
+    View,
 } from 'react-native';
 
 type ViewMode = 'week' | 'month';
@@ -79,20 +79,20 @@ export default function FolderAnalyticsScreen() {
     const loadData = React.useCallback(async () => {
         if (!id) return;
         try {
-            const folder = await getFolderById(Number(id));
+            const folder = await getFolderById(id);
             if (folder) {
                 setFolderName(folder.name);
                 setFolderColor(folder.color);
             }
 
             const { start, end } = getDateRange();
-            const folderStats = await getFolderStatsForRange(Number(id), start.toISOString(), end.toISOString());
+            const folderStats = await getFolderStatsForRange(id, start.toISOString(), end.toISOString());
             setStats(folderStats);
 
-            const daily = await getFolderDailyStatsForRange(Number(id), start.toISOString(), end.toISOString());
+            const daily = await getFolderDailyStatsForRange(id, start.toISOString(), end.toISOString());
             setChartData(daily);
 
-            const topicList = await getTopicsByFolder(Number(id));
+            const topicList = await getTopicsByFolder(id);
             setTopics(topicList);
         } catch (error) {
             console.error('Failed to load folder stats:', error);

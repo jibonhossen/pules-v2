@@ -3,29 +3,23 @@ import { Heatmap } from '@/components/Heatmap';
 import { StatsCard } from '@/components/StatsCard';
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
-import { getDailyStats } from '@/lib/database';
-import { useSessionStore } from '@/store/sessions';
 import { useColorScheme } from '@/hooks/use-color-scheme';
+import { getDailyStats, getSessionsByDateRange, getStatsForRange, type Session } from '@/lib/database';
 import { formatDuration } from '@/lib/utils';
-import { Clock, Flame, Target, Hash } from 'lucide-react-native';
+import { useSessionStore } from '@/store/sessions';
+import { useRouter } from 'expo-router';
+import { Clock, Flame, Hash, Settings, Target } from 'lucide-react-native';
 import * as React from 'react';
-import { RefreshControl, ScrollView, View, StyleSheet, Pressable } from 'react-native';
+import { Pressable, RefreshControl, ScrollView, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import { getDatabase, Session, getStatsForRange } from '@/lib/database';
 
 type ViewMode = 'week' | 'month';
 
 async function getDailyMapForRange(startDate: string, endDate: string): Promise<Map<string, number>> {
-    const database = await getDatabase();
-    const sessions = await database.getAllAsync<Session>(
-        `SELECT * FROM sessions 
-         WHERE start_time >= ? AND start_time <= ? AND end_time IS NOT NULL
-         ORDER BY start_time`,
-        [startDate, endDate]
-    );
+    const sessions = await getSessionsByDateRange(startDate, endDate);
 
     const dailyMap = new Map<string, number>();
-    sessions.forEach((session) => {
+    sessions.forEach((session: Session) => {
         const d = new Date(session.start_time);
         const offset = d.getTimezoneOffset() * 60000;
         const localDate = new Date(d.getTime() - offset).toISOString().split('T')[0];
@@ -40,12 +34,14 @@ async function getDailyMapForRange(startDate: string, endDate: string): Promise<
 export default function ReportsScreen() {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
-    const { currentStreak, loadStats } = useSessionStore();
+    const isDark = colorScheme === 'dark';
+    const { currentStreak, loadStats, userId } = useSessionStore();
     const [stats, setStats] = React.useState({ totalTime: 0, sessionCount: 0, averageTime: 0 });
     const [dailyData, setDailyData] = React.useState<Map<string, number>>(new Map());
     const [heatmapData, setHeatmapData] = React.useState<Map<string, number>>(new Map());
     const [refreshing, setRefreshing] = React.useState(false);
     const insets = useSafeAreaInsets();
+    const router = useRouter();
 
     // View State
     const [viewMode, setViewMode] = React.useState<ViewMode>('week');
@@ -92,6 +88,8 @@ export default function ReportsScreen() {
     }, [getDateRange]);
 
     const loadData = React.useCallback(async () => {
+        if (!userId) return; // Prevent loading before user is initialized
+
         await loadStats();
 
         // Heatmap data (always long range)
@@ -109,11 +107,13 @@ export default function ReportsScreen() {
         const rangeStats = await getStatsForRange(start.toISOString(), end.toISOString());
         setStats(rangeStats);
 
-    }, [loadStats, getDateRange]);
+    }, [loadStats, getDateRange, userId]);
 
     React.useEffect(() => {
-        loadData();
-    }, [loadData]);
+        if (userId) {
+            loadData();
+        }
+    }, [loadData, userId]);
 
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);
@@ -182,10 +182,23 @@ export default function ReportsScreen() {
         >
             {/* Header */}
             <View style={styles.header}>
-                <Text style={[styles.title, { color: colors.foreground }]}>Reports</Text>
-                <Text variant="muted" style={styles.subtitle}>
-                    Track your productivity over time
-                </Text>
+                <View style={styles.headerTop}>
+                    <View style={styles.headerTextContainer}>
+                        <Text style={[styles.title, { color: colors.foreground }]}>Reports</Text>
+                        <Text variant="muted" style={styles.subtitle}>
+                            Track your productivity over time
+                        </Text>
+                    </View>
+                    <Pressable
+                        style={[
+                            styles.settingsButton,
+                            { backgroundColor: isDark ? 'rgba(39, 39, 42, 0.6)' : 'rgba(0, 0, 0, 0.05)' }
+                        ]}
+                        onPress={() => router.push('/settings')}
+                    >
+                        <Settings size={22} color={colors.foreground} />
+                    </Pressable>
+                </View>
             </View>
 
             {/* Stats Cards */}
@@ -287,6 +300,21 @@ const styles = StyleSheet.create({
     header: {
         paddingHorizontal: 20,
         paddingVertical: 16,
+    },
+    headerTop: {
+        flexDirection: 'row',
+        justifyContent: 'space-between',
+        alignItems: 'flex-start',
+    },
+    headerTextContainer: {
+        flex: 1,
+    },
+    settingsButton: {
+        width: 44,
+        height: 44,
+        borderRadius: 14,
+        alignItems: 'center',
+        justifyContent: 'center',
     },
     title: {
         fontSize: 28,

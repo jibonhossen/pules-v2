@@ -1,16 +1,16 @@
 import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
-import { X, Check } from 'lucide-react-native';
-import * as React from 'react';
 import * as Haptics from 'expo-haptics';
+import { Check, X } from 'lucide-react-native';
+import * as React from 'react';
 import {
     Modal,
     Pressable,
+    ScrollView,
+    StyleSheet,
     TextInput,
     View,
-    StyleSheet,
-    ScrollView,
 } from 'react-native';
 
 const FOLDER_COLORS = [
@@ -26,7 +26,7 @@ const FOLDER_COLORS = [
 
 interface CreateFolderModalProps {
     visible: boolean;
-    folder?: { id: number; name: string; color: string } | null;
+    folder?: { id: string; name: string; color: string } | null;
     onClose: () => void;
     onSave: (name: string, color: string) => void;
 }

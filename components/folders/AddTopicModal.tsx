@@ -146,7 +146,7 @@ export function AddTopicModal({
                             ]}
                         >
                             <Text style={{ color: '#fff', fontWeight: '600' }}>
-                                Start Timer
+                                Create Topic
                             </Text>
                         </Pressable>
                     </View>

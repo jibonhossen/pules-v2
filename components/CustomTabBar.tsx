@@ -2,10 +2,10 @@ import { Text } from '@/components/ui/Text';
 import { PULSE_COLORS } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { BottomTabBarProps } from '@react-navigation/bottom-tabs';
-import { BarChart3, FolderOpen, Clock } from 'lucide-react-native';
-import * as React from 'react';
-import { Pressable, View, StyleSheet, Platform } from 'react-native';
 import * as Haptics from 'expo-haptics';
+import { BarChart3, Clock, FolderOpen } from 'lucide-react-native';
+import * as React from 'react';
+import { Pressable, StyleSheet, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 function TabItem({
@@ -36,10 +36,10 @@ function TabItem({
     // Map route names to icons
     const Icon = React.useMemo(() => {
         switch (route.name) {
-            case 'index': return Clock;
-            case 'folders': return FolderOpen;
+            case 'index': return FolderOpen;
+            case 'timer': return Clock;
             case 'reports': return BarChart3;
-            default: return Clock;
+            default: return FolderOpen;
         }
     }, [route.name]);
 
