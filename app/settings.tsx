@@ -52,8 +52,9 @@ export default function SettingsScreen() {
                     onPress: async () => {
                         setIsSigningOut(true);
                         try {
+                            await clearLastUserId();
                             await signOut();
-                            // Stay on settings page, user can continue using app offline
+                            router.replace('/(auth)/sign-in');
                         } catch (error) {
                             console.error('Sign out error:', error);
                             Alert.alert('Error', 'Failed to sign out. Please try again.');

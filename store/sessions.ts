@@ -284,17 +284,9 @@ export const useSessionStore = create<TimerState>((set, get) => ({
 
     loadStats: async () => {
         // Deprecated: statistics are now loaded reactively via useLiveStats
-        /*
         const { userId } = get();
-        if (!userId) return;
+        if (!userId) return; // Guard against race conditions
 
-        const [totalFocusTime, currentStreak] = await Promise.all([
-            getTotalFocusTime(),
-            getCurrentStreak(),
-        ]);
-        set({ totalFocusTime, currentStreak });
-        */
-        // Keep only streak for now as it's not fully reactive yet
         const currentStreak = await getCurrentStreak();
         set({ currentStreak });
     },

@@ -5,7 +5,7 @@ import { getLastUserId, saveLastUserId, tokenCache } from '@/lib/cache';
 import { setCurrentUserId } from '@/lib/database';
 import { PowerSyncProvider } from '@/lib/powersync/PowerSyncProvider';
 import { useSessionStore } from '@/store/sessions';
-import { ClerkLoaded, ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
+import { ClerkProvider, useAuth, useUser } from '@clerk/clerk-expo';
 import {
   Poppins_400Regular,
   Poppins_500Medium,
@@ -133,16 +133,14 @@ export default function RootLayout() {
 
   return (
     <ClerkProvider publishableKey={CLERK_PUBLISHABLE_KEY} tokenCache={tokenCache}>
-      <ClerkLoaded>
-        <PowerSyncProvider>
-          <GestureHandlerRootView style={styles.root}>
-            <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
-              <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
-              <InitialLayout />
-            </ThemeProvider>
-          </GestureHandlerRootView>
-        </PowerSyncProvider>
-      </ClerkLoaded>
+      <PowerSyncProvider>
+        <GestureHandlerRootView style={styles.root}>
+          <ThemeProvider value={NAV_THEME[colorScheme ?? 'dark']}>
+            <StatusBar style={colorScheme === 'dark' ? 'light' : 'dark'} />
+            <InitialLayout />
+          </ThemeProvider>
+        </GestureHandlerRootView>
+      </PowerSyncProvider>
     </ClerkProvider>
   );
 }

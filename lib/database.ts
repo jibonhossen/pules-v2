@@ -348,6 +348,25 @@ export async function getTopicsByFolder(folderId: string, userId?: string): Prom
     );
 }
 
+export async function getAllFolderTopics(userId?: string): Promise<{ folder_id: string; topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
+    const id = userId || getCurrentUserId();
+    return db.getAll(
+        `SELECT 
+            s.folder_id,
+            s.topic,
+            COALESCE(SUM(s.duration_seconds), 0) as totalTime,
+            COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
+            MAX(s.start_time) as lastSession,
+            tc.color
+        FROM sessions s
+        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+        WHERE s.folder_id IS NOT NULL AND s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+        GROUP BY s.folder_id, s.topic, tc.color
+        ORDER BY lastSession DESC`,
+        [id]
+    );
+}
+
 export async function getUnfolderedTopics(userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
     const id = userId || getCurrentUserId();
     return db.getAll(

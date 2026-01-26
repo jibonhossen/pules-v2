@@ -35,7 +35,7 @@ export default function ReportsScreen() {
     const { colorScheme } = useColorScheme();
     const colors = PULSE_COLORS[colorScheme ?? 'dark'];
     const isDark = colorScheme === 'dark';
-    const { currentStreak, loadStats } = useSessionStore();
+    const { currentStreak, loadStats, userId } = useSessionStore();
     const [stats, setStats] = React.useState({ totalTime: 0, sessionCount: 0, averageTime: 0 });
     const [dailyData, setDailyData] = React.useState<Map<string, number>>(new Map());
     const [heatmapData, setHeatmapData] = React.useState<Map<string, number>>(new Map());
@@ -88,6 +88,8 @@ export default function ReportsScreen() {
     }, [getDateRange]);
 
     const loadData = React.useCallback(async () => {
+        if (!userId) return; // Prevent loading before user is initialized
+
         await loadStats();
 
         // Heatmap data (always long range)
@@ -105,11 +107,13 @@ export default function ReportsScreen() {
         const rangeStats = await getStatsForRange(start.toISOString(), end.toISOString());
         setStats(rangeStats);
 
-    }, [loadStats, getDateRange]);
+    }, [loadStats, getDateRange, userId]);
 
     React.useEffect(() => {
-        loadData();
-    }, [loadData]);
+        if (userId) {
+            loadData();
+        }
+    }, [loadData, userId]);
 
     const onRefresh = React.useCallback(async () => {
         setRefreshing(true);

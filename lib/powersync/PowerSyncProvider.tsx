@@ -4,6 +4,7 @@
  */
 import { useAuth } from '@clerk/clerk-expo';
 import { PowerSyncContext } from '@powersync/react';
+import NetInfo from '@react-native-community/netinfo';
 import React, { useCallback, useEffect, useState, type ReactNode } from 'react';
 import { SupabaseConnector } from './connector';
 import { db, initPowerSync } from './database';
@@ -27,9 +28,28 @@ export function PowerSyncProvider({ children }: PowerSyncProviderProps) {
             return null;
         }
 
+        // Check network status first - fail fast if offline
+        const networkState = await NetInfo.fetch();
+        if (!networkState.isConnected) {
+            console.log('[PowerSync] Offline, skipping token fetch');
+            return null;
+        }
+
         try {
-            // Get Clerk JWT token - you need to configure 'supabase' template in Clerk dashboard
-            const token = await getToken({ template: 'supabase' });
+            // Get Clerk JWT token with timeout
+            // If Clerk takes too long (e.g. slow network), we shouldn't block local DB forever
+            const timeoutPromise = new Promise<null>((resolve) =>
+                setTimeout(() => resolve(null), 3000)
+            );
+
+            const tokenPromise = getToken({ template: 'supabase' });
+
+            // Race against 3s timeout
+            const token = await Promise.race([tokenPromise, timeoutPromise]);
+
+            if (!token) {
+                console.log('[PowerSync] Token fetch timed out or null');
+            }
             return token;
         } catch (error: any) {
             // Check if this is a "template not found" error

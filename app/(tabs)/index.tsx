@@ -8,15 +8,14 @@ import {
     createTopicInFolder,
     deleteFolder,
     deleteTopic,
+    getAllFolderTopics,
     getFolders,
-    getFolderStats,
-    getTopicsByFolder,
     getUnfolderedTopics,
     moveTopicToFolder,
     renameAllSessionsWithTopic,
     updateFolder,
     upsertTopicConfig,
-    type Folder,
+    type Folder
 } from '@/lib/database';
 import { useSessionStore } from '@/store/sessions';
 import * as Haptics from 'expo-haptics';
@@ -24,6 +23,7 @@ import { useRouter } from 'expo-router';
 import { FolderOpen, Plus } from 'lucide-react-native';
 import * as React from 'react';
 import {
+    ActivityIndicator,
     Alert,
     Pressable,
     RefreshControl,
@@ -56,6 +56,7 @@ export default function FoldersScreen() {
     const [folders, setFolders] = React.useState<FolderWithData[]>([]);
     const [unfolderedTopics, setUnfolderedTopics] = React.useState<TopicData[]>([]);
     const [refreshing, setRefreshing] = React.useState(false);
+    const [isLoading, setIsLoading] = React.useState(true); // Initial load state
     const [modalVisible, setModalVisible] = React.useState(false);
     const [editingFolder, setEditingFolder] = React.useState<Folder | null>(null);
     const [addTopicModalVisible, setAddTopicModalVisible] = React.useState(false);
@@ -65,35 +66,63 @@ export default function FoldersScreen() {
     const [renameTopicModalVisible, setRenameTopicModalVisible] = React.useState(false);
     const [topicToRename, setTopicToRename] = React.useState('');
 
-    const loadData = React.useCallback(async () => {
+    const loadData = React.useCallback(async (showLoading = false) => {
         if (!userId) return;
-        try {
-            const allFolders = await getFolders(userId);
-            console.log('[UI] getFolders returned:', allFolders.length, 'folders'); // DEBUG
-            if (!allFolders) return;
-            const foldersWithData: FolderWithData[] = await Promise.all(
-                allFolders.map(async (folder) => {
-                    const topics = await getTopicsByFolder(folder.id, userId);
-                    const stats = await getFolderStats(folder.id, userId);
-                    return {
-                        ...folder,
-                        topics,
-                        totalTime: stats.totalTime,
-                    };
-                })
-            );
-            setFolders(foldersWithData);
+        if (showLoading) setIsLoading(true);
 
-            const unfoldered = await getUnfolderedTopics(userId);
+        try {
+            console.time('loadData');
+            // Fetch all data in parallel batches
+            const [allFolders, allTopics, unfoldered] = await Promise.all([
+                getFolders(userId),
+                getAllFolderTopics(userId),
+                getUnfolderedTopics(userId)
+            ]);
+
+            console.log('[UI] Fetched:', allFolders.length, 'folders,', allTopics.length, 'topics');
+
+            if (!allFolders) {
+                setFolders([]);
+                return;
+            }
+
+            // Map topics to folders in memory (much faster than N+1 queries)
+            const topicMap = new Map<string, TopicData[]>();
+            allTopics.forEach(t => {
+                const folderId = t.folder_id;
+                if (!topicMap.has(folderId)) topicMap.set(folderId, []);
+                topicMap.get(folderId)?.push({
+                    topic: t.topic,
+                    totalTime: t.totalTime,
+                    sessionCount: t.sessionCount,
+                    lastSession: t.lastSession,
+                    color: t.color
+                });
+            });
+
+            const foldersWithData: FolderWithData[] = allFolders.map(folder => {
+                const topics = topicMap.get(folder.id) || [];
+                const totalTime = topics.reduce((sum, t) => sum + t.totalTime, 0);
+                return {
+                    ...folder,
+                    topics,
+                    totalTime,
+                };
+            });
+
+            setFolders(foldersWithData);
             setUnfolderedTopics(unfoldered);
+            console.timeEnd('loadData');
         } catch (error) {
             console.error('Failed to load folders:', error);
+        } finally {
+            setIsLoading(false);
         }
     }, [userId]);
 
     React.useEffect(() => {
         if (userId) {
-            loadData();
+            loadData(true); // Show loading only on first mount/user change
         }
     }, [loadData, userId]);
 
@@ -101,7 +130,7 @@ export default function FoldersScreen() {
         setRefreshing(true);
         try {
             // PowerSync handles sync automatically
-            await loadData();
+            await loadData(false);
         } catch (e) {
             console.error('Refresh failed', e);
             Alert.alert('Error', 'Failed to refresh data');
@@ -266,8 +295,11 @@ export default function FoldersScreen() {
                         />
                     }
                 >
-                    {/* Folders */}
-                    {folders.length === 0 && unfolderedTopics.length === 0 ? (
+                    {isLoading ? (
+                        <View style={{ paddingTop: 100, alignItems: 'center' }}>
+                            <ActivityIndicator size="large" color={colors.primary} />
+                        </View>
+                    ) : folders.length === 0 && unfolderedTopics.length === 0 ? (
                         <View style={styles.emptyState}>
                             <View style={[styles.emptyIcon, { backgroundColor: `${colors.primary}20` }]}>
                                 <FolderOpen size={48} color={colors.primary} />
