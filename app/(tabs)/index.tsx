@@ -115,6 +115,8 @@ export default function FoldersScreen() {
             console.timeEnd('loadData');
         } catch (error) {
             console.error('Failed to load folders:', error);
+            // Added for debugging release build
+            Alert.alert('Load Error', `Failed to load folders: ${error instanceof Error ? error.message : JSON.stringify(error)}`);
         } finally {
             setIsLoading(false);
         }
