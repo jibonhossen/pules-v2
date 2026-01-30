@@ -71,7 +71,6 @@ export default function FoldersScreen() {
         if (showLoading) setIsLoading(true);
 
         try {
-            console.time('loadData');
             // Fetch all data in parallel batches
             const [allFolders, allTopics, unfoldered] = await Promise.all([
                 getFolders(userId),
@@ -112,7 +111,6 @@ export default function FoldersScreen() {
 
             setFolders(foldersWithData);
             setUnfolderedTopics(unfoldered);
-            console.timeEnd('loadData');
         } catch (error) {
             console.error('Failed to load folders:', error);
             // Added for debugging release build

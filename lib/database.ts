@@ -71,6 +71,17 @@ function uuid(): string {
     });
 }
 
+// ==================== HELPERS ====================
+
+async function safeQuery<T>(operation: () => Promise<T>, fallback: T, context: string): Promise<T> {
+    try {
+        return await operation();
+    } catch (error) {
+        console.error(`[DB] Query failed in ${context}:`, error);
+        return fallback;
+    }
+}
+
 // ==================== SESSION CRUD ====================
 
 export async function createSession(
@@ -285,9 +296,13 @@ export async function createFolder(
 
 export async function getFolders(userId?: string): Promise<Folder[]> {
     const id = userId || getCurrentUserId();
-    return db.getAll<Folder>(
-        'SELECT * FROM folders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC',
-        [id]
+    return safeQuery(
+        () => db.getAll<Folder>(
+            'SELECT * FROM folders WHERE user_id = ? AND is_deleted = 0 ORDER BY created_at DESC',
+            [id]
+        ),
+        [],
+        'getFolders'
     );
 }
 
@@ -351,40 +366,48 @@ export async function getTopicsByFolder(folderId: string, userId?: string): Prom
 
 export async function getAllFolderTopics(userId?: string): Promise<{ folder_id: string; topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
     const id = userId || getCurrentUserId();
-    return db.getAll(
-        `SELECT 
-            tc.folder_id,
-            tc.topic,
-            COALESCE(SUM(s.duration_seconds), 0) as totalTime,
-            COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(s.start_time) as lastSession,
-            tc.color
-        FROM topic_configs tc
-        LEFT JOIN sessions s ON s.topic = tc.topic AND s.user_id = tc.user_id AND s.is_deleted = 0 AND s.end_time IS NOT NULL
-        WHERE tc.folder_id IS NOT NULL AND tc.user_id = ?
-        GROUP BY tc.folder_id, tc.topic, tc.color
-        ORDER BY lastSession DESC`,
-        [id]
+    return safeQuery(
+        () => db.getAll(
+            `SELECT 
+                tc.folder_id,
+                tc.topic,
+                COALESCE(SUM(s.duration_seconds), 0) as totalTime,
+                COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
+                MAX(s.start_time) as lastSession,
+                tc.color
+            FROM topic_configs tc
+            LEFT JOIN sessions s ON s.topic = tc.topic AND s.user_id = tc.user_id AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+            WHERE tc.folder_id IS NOT NULL AND tc.user_id = ?
+            GROUP BY tc.folder_id, tc.topic, tc.color
+            ORDER BY lastSession DESC`,
+            [id]
+        ),
+        [],
+        'getAllFolderTopics'
     );
 }
 
 export async function getUnfolderedTopics(userId?: string): Promise<{ topic: string; totalTime: number; sessionCount: number; lastSession: string; color: string | null }[]> {
     const id = userId || getCurrentUserId();
     // Get topics from sessions that don't have a topic_config with a folder
-    return db.getAll(
-        `SELECT 
-            s.topic,
-            COALESCE(SUM(s.duration_seconds), 0) as totalTime,
-            COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
-            MAX(s.start_time) as lastSession,
-            tc.color
-        FROM sessions s
-        LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
-        WHERE s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
-              AND (tc.folder_id IS NULL OR tc.id IS NULL)
-        GROUP BY s.topic, tc.color
-        ORDER BY lastSession DESC`,
-        [id]
+    return safeQuery(
+        () => db.getAll(
+            `SELECT 
+                s.topic,
+                COALESCE(SUM(s.duration_seconds), 0) as totalTime,
+                COUNT(CASE WHEN s.duration_seconds > 0 THEN 1 END) as sessionCount,
+                MAX(s.start_time) as lastSession,
+                tc.color
+            FROM sessions s
+            LEFT JOIN topic_configs tc ON s.topic = tc.topic AND tc.user_id = s.user_id
+            WHERE s.user_id = ? AND s.is_deleted = 0 AND s.end_time IS NOT NULL
+                AND (tc.folder_id IS NULL OR tc.id IS NULL)
+            GROUP BY s.topic, tc.color
+            ORDER BY lastSession DESC`,
+            [id]
+        ),
+        [],
+        'getUnfolderedTopics'
     );
 }
 
