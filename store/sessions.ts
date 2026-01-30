@@ -252,17 +252,72 @@ export const useSessionStore = create<TimerState>((set, get) => ({
 
         try {
             const savedStateStr = await getAppState('timer_state');
+            let restored = false;
+
             if (savedStateStr) {
                 const savedState = JSON.parse(savedStateStr);
 
+                // If we have a running session in the state
                 if (savedState.currentSessionId && savedState.startTime) {
-                    console.log('[Timer] Found persisted session from previous run. Ending it.');
-                    await recoverUnfinishedSession();
-                    await setAppState('timer_state', '');
+                    console.log('[Timer] Found persisted timer state.');
+
+                    const now = Date.now();
+                    const startTime = savedState.startTime;
+
+                    // If it was running (not paused), update elapsed time
+                    if (savedState.isRunning && !savedState.isPaused) {
+                        // Check if background running is allowed
+                        if (savedState.isBackgroundAllowed) {
+                            console.log('[Timer] Background allowed. Resuming timer with updated elapsed time.');
+                            const elapsed = Math.floor((now - startTime) / 1000);
+
+                            set({
+                                ...savedState,
+                                isRunning: true,
+                                isPaused: false,
+                                elapsedSeconds: elapsed,
+                                autoPaused: false // Clear auto-pause since we're "catching up"
+                            });
+
+                            await activateKeepAwakeAsync();
+                            restored = true;
+                        } else {
+                            // Background not allowed - it should have been paused by onAppBackground
+                            // But if it wasn't for some reason (crash?), we treat it as paused from now
+                            console.log('[Timer] Background NOT allowed. Restoring as paused.');
+                            set({
+                                ...savedState,
+                                isRunning: true,
+                                isPaused: true,
+                                pausedAt: savedState.pausedAt || now, // Use saved pausedAt or now
+                                autoPaused: true
+                            });
+                            restored = true;
+                        }
+                    } else if (savedState.isRunning && savedState.isPaused) {
+                        // It was already paused
+                        console.log('[Timer] Restoring paused timer.');
+                        set({
+                            ...savedState
+                        });
+                        restored = true;
+                    }
                 }
-            } else {
-                await recoverUnfinishedSession();
             }
+
+            // Only run recovery if we didn't restore a valid local state
+            if (!restored) {
+                console.log('[Timer] No valid local state found. Checking for unfinished database sessions.');
+                await recoverUnfinishedSession();
+            } else {
+                // We restored state, so we don't want recoverUnfinishedSession to close our "open" session
+                // However, recoverUnfinishedSession checks for ANY end_time=NULL session.
+                // We should ideally verify the restored session matches the DB session, but for now, 
+                // if we restored, we assume we own the live session.
+                // NOTE: If the user cleared app data but DB remained, recoverUnfinishedSession would be needed.
+                // But here we prioritize local state.
+            }
+
         } catch (e) {
             console.error("Failed to recover", e);
             try {
